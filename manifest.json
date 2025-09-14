@@ -1,18 +1,19 @@
 {
   "manifest_version": 3,
   "name": "Meu Analisador de Produtos",
-  "version": "1.0",
+  "version": "5.0",
   "description": "Uma extensão para analisar dados de produtos para uso pessoal.",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage" 
   ],
   "host_permissions": [
     "*://*.mercadolivre.com.br/*"
   ],
   "content_scripts": [
     {
-      "matches": ["*://*.mercadolivre.com.br/*", "*://produto.mercadolivre.com.br/*"],
+      "matches": ["*://*.mercadolivre.com.br/*"],
       "js": ["content.js"],
       "css": ["style.css"]
     }

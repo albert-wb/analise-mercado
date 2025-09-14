@@ -1,21 +1,22 @@
 /* Estilo para o botão de análise */
 .meu-botao-analise {
-  position: fixed; /* Fica fixo na tela mesmo com scroll */
+  position: fixed; /* Essencial para poder mover */
   top: 100px;
   right: 20px;
-  background-color: #3483fa; /* Cor do Mercado Livre */
+  background-color: #3483fa;
   color: white;
   padding: 12px 20px;
   border: none;
   border-radius: 6px;
   font-size: 16px;
-  cursor: pointer;
-  z-index: 9999; /* Garante que ele fique por cima de tudo */
-  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+  cursor: grab; /* Mãozinha para indicar que é móvel */
+  z-index: 9999;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+  user-select: none; /* Impede a seleção de texto ao arrastar */
 }
 
-.meu-botao-analise:hover {
-  background-color: #2968c8;
+.meu-botao-analise:active {
+  cursor: grabbing; /* Mãozinha fechada ao arrastar */
 }
 
 /* Estilo para o painel de resultados */
@@ -23,133 +24,120 @@
   position: fixed;
   top: 160px;
   right: 20px;
-  width: 300px;
+  width: 320px; /* Tamanho inicial */
+  min-width: 300px; /* Largura mínima */
+  height: 450px; /* Altura inicial */
+  min-height: 300px; /* Altura mínima */
   background-color: #fff;
   border: 1px solid #ddd;
   border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 9998;
   font-family: Arial, sans-serif;
   color: #333;
+  display: flex; /* Usando flexbox para organizar o conteúdo */
+  flex-direction: column;
+
+  /* A MÁGICA DO REDIMENSIONAMENTO! */
+  resize: both;
+  overflow: auto; /* Necessário para que o 'resize' funcione */
+  cursor: grab; /* Também será móvel */
+  user-select: none; /* Impede seleção de texto */
+}
+
+#meu-painel-analise:active {
+  cursor: grabbing;
 }
 
 #meu-painel-analise h3 {
   margin-top: 0;
+  padding: 15px 20px;
   color: #3483fa;
   border-bottom: 2px solid #f5f5f5;
-  padding-bottom: 10px;
+  flex-shrink: 0; /* Impede que o header encolha */
 }
 
-#meu-painel-analise p {
-  margin: 10px 0;
-  line-height: 1.5;
+/* Conteúdo que pode rolar */
+.painel-content {
+  padding: 0 20px 20px 20px;
+  overflow-y: auto; /* Permite scroll se o conteúdo for maior que o painel */
 }
 
-#meu-painel-analise strong {
-    color: #555;
-}
-
-/* Adicione isso ao final do seu style.css */
-
+/* --- ESTILOS ANTERIORES (com pequenos ajustes) --- */
 #meu-painel-analise .section {
   border-bottom: 1px solid #eee;
   padding-bottom: 10px;
   margin-bottom: 10px;
 }
-
 #meu-painel-analise .section:last-child {
   border-bottom: none;
   margin-bottom: 0;
   padding-bottom: 0;
 }
-
 #meu-painel-analise .price {
-  color: #00a650; /* Um verde para destacar o preço */
+  color: #00a650;
   font-weight: bold;
   font-size: 1.1em;
 }
-
 #meu-painel-analise a {
-    color: #3483fa;
-    text-decoration: none;
+  color: #3483fa;
+  text-decoration: none;
 }
-
 #meu-painel-analise a:hover {
-    text-decoration: underline;
+  text-decoration: underline;
 }
-
-/* --- Estilos para a Calculadora --- */
-#meu-painel-analise .calculator {
-    background-color: #f9f9f9;
-    padding: 15px;
-    margin: 15px -20px -20px -20px; /* Ajusta para preencher o fundo do card */
-    border-top: 1px solid #eee;
-    border-radius: 0 0 8px 8px;
-}
-
-#meu-painel-analise h4 {
-    margin-top: 0;
-    margin-bottom: 15px;
-    text-align: center;
-    color: #555;
-}
-
-#meu-painel-analise .input-group {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-#meu-painel-analise label {
-    font-size: 14px;
-    color: #333;
-}
-
-#meu-painel-analise input[type="number"],
-#meu-painel-analise select {
-    width: 120px;
-    padding: 5px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 14px;
-    text-align: right;
-}
-
-#meu-painel-analise #results {
-    margin-top: 15px;
-    padding-top: 10px;
-    border-top: 1px dashed #ccc;
-}
-
-#meu-painel-analise #results p {
-    display: flex;
-    justify-content: space-between;
-    margin: 8px 0;
-    font-size: 15px;
-}
-
-#meu-painel-analise .lucro {
-    font-weight: bold;
-    font-size: 1.1em;
-}
-
-/* Adicione isso ao final do seu style.css */
-
 #meu-painel-analise .highlight {
-    font-weight: bold;
-    background-color: #f1c40f; /* Um amarelo para destacar */
-    padding: 2px 5px;
-    border-radius: 4px;
-    color: #333;
+  font-weight: bold;
+  background-color: #f1c40f;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #333;
 }
-
 #meu-painel-analise .prejuizo {
-    color: #e74c3c !important; /* Vermelho para prejuízo */
+  color: #e74c3c !important;
 }
-
-/* Garante que o lucro positivo fique verde */
 #meu-painel-analise .lucro {
-    color: #2ecc71;
+  color: #2ecc71;
+}
+#meu-painel-analise .calculator {
+  background-color: #f9f9f9;
+  padding: 15px;
+  margin: 15px 0 0 0;
+  border-top: 1px solid #eee;
+  border-radius: 4px;
+}
+#meu-painel-analise h4 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  text-align: center;
+  color: #555;
+}
+#meu-painel-analise .input-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+#meu-painel-analise label {
+  font-size: 14px;
+  color: #333;
+}
+#meu-painel-analise input[type="number"] {
+  width: 120px;
+  padding: 5px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  text-align: right;
+}
+#meu-painel-analise #results {
+  margin-top: 15px;
+  padding-top: 10px;
+  border-top: 1px dashed #ccc;
+}
+#meu-painel-analise #results p {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px 0;
+  font-size: 15px;
 }

@@ -1,8 +1,6 @@
-console.log("Meu Analisador (v3.0 - Calculadora) carregado!");
+console.log("Meu Analisador (v4.1 - Correção Vendas) carregado!");
 
 // --- ESTRUTURA DE TAXAS (EXEMPLO) ---
-// ATENÇÃO: Estes valores são apenas exemplos! Consulte a página oficial do
-// Mercado Livre para obter as taxas mais recentes e completas para cada categoria.
 const TAXAS_MERCADO_LIVRE = {
     "limiteCustoFixo": 79.00,
     "custoFixo": 6.00,
@@ -10,18 +8,15 @@ const TAXAS_MERCADO_LIVRE = {
         "Classico": 0.13, // 13%
         "Premium": 0.18   // 18%
     }
-    // Para uma versão mais avançada, você poderia detalhar por categoria:
-    // "taxasPorCategoria": { "Eletronicos": { "Classico": 0.14, "Premium": 0.19 }, ... }
 };
 
-// Objeto global para armazenar os dados do produto
 let dadosProduto = {};
 
-function analisarProduto() {
-    console.log("Iniciando análise avançada...");
-
-    // ... (O código de extração de dados da versão anterior continua o mesmo) ...
+function extrairDados() {
+    console.log("Iniciando extração de dados Pro...");
     let dados = {};
+
+    // --- 1. Extração Principal via JSON-LD ---
     try {
         const scriptJsonLD = document.querySelector('script[type="application/ld+json"]');
         if (scriptJsonLD) {
@@ -33,21 +28,70 @@ function analisarProduto() {
                 dados.preco = parseFloat(data.offers.price);
             }
         }
-    } catch (error) {
-        console.error("Falha ao extrair preço do JSON-LD. Tentando via DOM.", error);
-    }
-    
+    } catch (error) { console.error("Falha ao extrair do JSON-LD.", error); }
+
+    // --- 2. Extração via DOM ---
+    const getText = (selector) => document.querySelector(selector)?.innerText.trim() || null;
+
     if (!dados.preco) {
-        const precoString = document.querySelector('.andes-money-amount__fraction')?.innerText;
+        const precoString = getText('.andes-money-amount__fraction');
         if (precoString) {
             dados.preco = parseFloat(precoString.replace(/\./g, '').replace(',', '.'));
         }
     }
-    // ----
+    dados.valorUnitario = dados.preco;
+
+    // ==================================================================
+    //  INÍCIO DA CORREÇÃO - Extração de Vendas Inteligente
+    // ==================================================================
+    const vendasTexto = getText('.ui-pdp-subtitle'); // Ex: "Novo | +5 mil vendidos"
+    let vendas = 0;
+    if (vendasTexto) {
+        const textoNormalizado = vendasTexto.toLowerCase(); // -> "novo | +5 mil vendidos"
+        
+        // Pega apenas a parte numérica da string
+        const match = textoNormalizado.match(/(\d[\d\.]*)/g);
+        
+        if (match) {
+            // Pega o último número encontrado, remove os pontos e converte para inteiro
+            let numeroBase = parseInt(match[match.length - 1].replace(/\./g, '')); // -> 5
+            
+            // Verifica se a string original continha "mil"
+            if (textoNormalizado.includes('mil')) {
+                vendas = numeroBase * 1000; // -> 5 * 1000 = 5000
+            } else {
+                vendas = numeroBase;
+            }
+        }
+    }
+    dados.vendas = vendas;
+    // ==================================================================
+    //  FIM DA CORREÇÃO
+    // ==================================================================
+
+    // --- 3. Deducao do Tipo de Anuncio ---
+    const installmentsInfo = getText('.ui-pdp-price__subtitles');
+    dados.tipoAnuncio = (installmentsInfo && installmentsInfo.toLowerCase().includes('sem juros')) ? "Premium" : "Classico";
+
+    // --- 4. Extração do EAN (GTIN) ---
+    dados.ean = "Não encontrado";
+    const specTableRows = document.querySelectorAll('.ui-vpp-striped-specs__row');
+    specTableRows.forEach(row => {
+        const header = row.querySelector('th')?.innerText.trim().toUpperCase();
+        if (header === 'EAN' || header === 'CÓDIGO UNIVERSAL DE PRODUTO' || header === 'GTIN') {
+            dados.ean = row.querySelector('td')?.innerText.trim();
+        }
+    });
+
+    // --- 5. Cálculos Brutos ---
+    dados.volumeBruto = (dados.valorUnitario && dados.vendas) ? (dados.valorUnitario * dados.vendas) : 0;
     
-    dadosProduto = dados; // Salva os dados do produto globalmente
+    dadosProduto = dados;
+    console.log("Dados extraídos:", dadosProduto);
     exibirPainel();
 }
+
+// ... (O restante do arquivo: exibirPainel, setupCalculadoraListeners, calcularLucro, e o botão, continua EXATAMENTE IGUAL) ...
 
 function exibirPainel() {
     let painelExistente = document.getElementById('meu-painel-analise');
@@ -55,40 +99,35 @@ function exibirPainel() {
 
     const painel = document.createElement('div');
     painel.id = 'meu-painel-analise';
-    
-    const precoVenda = dadosProduto.preco || 0;
+
+    const formatCurrency = (num) => num ? num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'N/A';
+    const formatNumber = (num) => num ? num.toLocaleString('pt-BR') : 'N/A';
 
     painel.innerHTML = `
-        <h3>📊 Análise e Lucratividade</h3>
+        <h3>📊 Análise de Produto</h3>
         <div class="section">
-            <p><strong>Produto:</strong> ${dadosProduto.titulo || 'Não encontrado'}</p>
-            <p><strong>Preço de Venda:</strong> <span class="price">${precoVenda.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span></p>
+            <p><strong>EAN:</strong> <span class="highlight">${dadosProduto.ean || 'N/A'}</span></p>
+            <p><strong>Tipo de Anúncio:</strong> <span class="highlight">${dadosProduto.tipoAnuncio}</span></p>
+        </div>
+        <div class="section">
+            <p><strong>Valor Unitário:</strong> ${formatCurrency(dadosProduto.valorUnitario)}</p>
+            <p><strong>Vendas Estimadas:</strong> ${formatNumber(dadosProduto.vendas)}</p>
+            <p><strong>Volume Bruto (Receita):</strong> ${formatCurrency(dadosProduto.volumeBruto)}</p>
         </div>
         
         <div class="section calculator">
-            <h4>Calculadora de Lucro</h4>
+            <h4>Calculadora de Lucratividade</h4>
             <div class="input-group">
                 <label for="custoProduto">Custo do Produto (R$)</label>
                 <input type="number" id="custoProduto" placeholder="Ex: 25,50">
             </div>
             <div class="input-group">
                 <label for="custoFrete">Custo do Frete (R$)</label>
-                <input type="number" id="custoFrete" placeholder="Custo do frete grátis">
-            </div>
-            <div class="input-group">
-                <label for="outrosCustos">Outros Custos (R$)</label>
-                <input type="number" id="outrosCustos" placeholder="Impostos, embalagem...">
-            </div>
-            <div class="input-group">
-                <label for="tipoAnuncio">Tipo de Anúncio</label>
-                <select id="tipoAnuncio">
-                    <option value="Classico">Clássico (${TAXAS_MERCADO_LIVRE.taxasPorAnuncio.Classico * 100}%)</option>
-                    <option value="Premium">Premium (${TAXAS_MERCADO_LIVRE.taxasPorAnuncio.Premium * 100}%)</option>
-                </select>
+                <input type="number" id="custoFrete" placeholder="Se houver">
             </div>
             <div id="results">
                 <p><strong>Tarifa ML:</strong> <span id="resTarifaML">R$ 0,00</span></p>
-                <p><strong>Custos Totais:</strong> <span id="resCustosTotais">R$ 0,00</span></p>
+                <p><strong>Valor Recebido (por venda):</strong> <span id="resValorRecebido" class="highlight">R$ 0,00</span></p>
                 <hr>
                 <p><strong>Lucro por Venda:</strong> <span id="resLucro" class="lucro">R$ 0,00</span></p>
                 <p><strong>Margem de Lucro:</strong> <span id="resMargem" class="lucro">0,00%</span></p>
@@ -97,61 +136,48 @@ function exibirPainel() {
     `;
 
     document.body.appendChild(painel);
-    setupCalculadoraListeners(); // Adiciona os "ouvintes" aos inputs
+    setupCalculadoraListeners();
 }
 
 function setupCalculadoraListeners() {
-    const inputs = ['custoProduto', 'custoFrete', 'outrosCustos', 'tipoAnuncio'];
+    const inputs = ['custoProduto', 'custoFrete'];
     inputs.forEach(id => {
         document.getElementById(id).addEventListener('input', calcularLucro);
     });
-    calcularLucro(); // Roda uma vez para inicializar com valores zerados
+    calcularLucro(); 
 }
 
 function calcularLucro() {
-    const precoVenda = dadosProduto.preco || 0;
+    const precoVenda = dadosProduto.valorUnitario || 0;
+    const tipoAnuncio = dadosProduto.tipoAnuncio || "Classico";
 
-    // 1. Ler os valores dos inputs
     const custoProduto = parseFloat(document.getElementById('custoProduto').value) || 0;
     const custoFrete = parseFloat(document.getElementById('custoFrete').value) || 0;
-    const outrosCustos = parseFloat(document.getElementById('outrosCustos').value) || 0;
-    const tipoAnuncio = document.getElementById('tipoAnuncio').value;
 
-    // 2. Calcular as taxas do Mercado Livre
     const taxaPercentual = TAXAS_MERCADO_LIVRE.taxasPorAnuncio[tipoAnuncio];
     let comissaoML = precoVenda * taxaPercentual;
-    let custoFixoML = 0;
-    if (precoVenda < TAXAS_MERCADO_LIVRE.limiteCustoFixo) {
-        custoFixoML = TAXAS_MERCADO_LIVRE.custoFixo;
-    }
+    let custoFixoML = (precoVenda < TAXAS_MERCADO_LIVRE.limiteCustoFixo) ? TAXAS_MERCADO_LIVRE.custoFixo : 0;
     const tarifaTotalML = comissaoML + custoFixoML;
 
-    // 3. Calcular os resultados
-    const custosTotais = tarifaTotalML + custoProduto + custoFrete + outrosCustos;
-    const lucro = precoVenda - custosTotais;
+    const valorRecebido = precoVenda - tarifaTotalML - custoFrete;
+    const lucro = valorRecebido - custoProduto;
     const margem = (precoVenda > 0) ? (lucro / precoVenda) * 100 : 0;
 
-    // 4. Exibir os resultados na tela
     document.getElementById('resTarifaML').innerText = tarifaTotalML.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    document.getElementById('resCustosTotais').innerText = custosTotais.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    document.getElementById('resValorRecebido').innerText = valorRecebido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     document.getElementById('resLucro').innerText = lucro.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     document.getElementById('resMargem').innerText = `${margem.toFixed(2)}%`;
 
-    // Adiciona uma cor para lucro/prejuízo
     const lucroElements = document.querySelectorAll('.lucro');
-    if (lucro < 0) {
-        lucroElements.forEach(el => el.style.color = '#e74c3c'); // Vermelho
-    } else {
-        lucroElements.forEach(el => el.style.color = '#2ecc71'); // Verde
-    }
+    const valorRecebidoEl = document.getElementById('resValorRecebido');
+    lucro < 0 ? lucroElements.forEach(el => el.classList.add('prejuizo')) : lucroElements.forEach(el => el.classList.remove('prejuizo'));
+    valorRecebido < custoProduto ? valorRecebidoEl.classList.add('prejuizo') : valorRecebidoEl.classList.remove('prejuizo');
 }
 
-
-// Cria o botão de análise somente se ele ainda não existir na página
 if (!document.querySelector('.meu-botao-analise')) {
     const botaoAnalisar = document.createElement('button');
-    botaoAnalisar.innerText = "Analisar Lucratividade";
+    botaoAnalisar.innerText = "Análise PRO";
     botaoAnalisar.className = 'meu-botao-analise';
     document.body.appendChild(botaoAnalisar);
-    botaoAnalisar.addEventListener('click', analisarProduto);
+    botaoAnalisar.addEventListener('click', extrairDados);
 }

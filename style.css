@@ -134,3 +134,22 @@
     font-weight: bold;
     font-size: 1.1em;
 }
+
+/* Adicione isso ao final do seu style.css */
+
+#meu-painel-analise .highlight {
+    font-weight: bold;
+    background-color: #f1c40f; /* Um amarelo para destacar */
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: #333;
+}
+
+#meu-painel-analise .prejuizo {
+    color: #e74c3c !important; /* Vermelho para prejuízo */
+}
+
+/* Garante que o lucro positivo fique verde */
+#meu-painel-analise .lucro {
+    color: #2ecc71;
+}

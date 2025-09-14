@@ -78,3 +78,59 @@
 #meu-painel-analise a:hover {
     text-decoration: underline;
 }
+
+/* --- Estilos para a Calculadora --- */
+#meu-painel-analise .calculator {
+    background-color: #f9f9f9;
+    padding: 15px;
+    margin: 15px -20px -20px -20px; /* Ajusta para preencher o fundo do card */
+    border-top: 1px solid #eee;
+    border-radius: 0 0 8px 8px;
+}
+
+#meu-painel-analise h4 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    text-align: center;
+    color: #555;
+}
+
+#meu-painel-analise .input-group {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+#meu-painel-analise label {
+    font-size: 14px;
+    color: #333;
+}
+
+#meu-painel-analise input[type="number"],
+#meu-painel-analise select {
+    width: 120px;
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    text-align: right;
+}
+
+#meu-painel-analise #results {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px dashed #ccc;
+}
+
+#meu-painel-analise #results p {
+    display: flex;
+    justify-content: space-between;
+    margin: 8px 0;
+    font-size: 15px;
+}
+
+#meu-painel-analise .lucro {
+    font-weight: bold;
+    font-size: 1.1em;
+}

@@ -1,64 +1,127 @@
-console.log("Meu Analisador carregado!");
+console.log("Meu Analisador (v2.0) carregado!");
 
 // Função principal que será executada
 function analisarProduto() {
-  // --- PASSO 1: Encontrar os dados na página ---
-  // ATENÇÃO: Estes seletores SÃO EXEMPLOS e provavelmente precisarão ser atualizados!
-  const seletorTitulo = '.ui-pdp-title';
-  const seletorPreco = '.andes-money-amount__fraction';
-  const seletorVendas = '.ui-pdp-subtitle'; // O ML geralmente coloca "Novo  |  +5000 vendidos"
+  console.log("Iniciando análise avançada...");
 
-  // Usamos querySelector para pegar o texto de cada elemento
-  const titulo = document.querySelector(seletorTitulo)?.innerText;
-  const precoString = document.querySelector(seletorPreco)?.innerText.replace('.', ''); // Remove o ponto de milhar
-  const preco = parseFloat(precoString);
+  let dados = {};
 
-  // Extrair apenas os números de vendas do texto
-  let vendasTexto = document.querySelector(seletorVendas)?.innerText || '0 vendidos';
-  let vendas = parseInt(vendasTexto.replace(/[^0-9]/g, '')); // Remove tudo que não for número
-
-  // Se não encontrar um número (ex: "+ de 5000"), podemos fazer uma estimativa
-  if (isNaN(vendas)) {
-      if (vendasTexto.includes('+')) {
-          vendas = parseInt(vendasTexto.replace(/[^0-9]/g, ''))
-      } else {
-          vendas = 0; // Se não conseguir extrair, define como 0
+  // --- MÉTODO 1: TENTAR EXTRAIR DO JSON-LD (MUITO MAIS ROBUSTO) ---
+  try {
+    const scriptJsonLD = document.querySelector('script[type="application/ld+json"]');
+    if (scriptJsonLD) {
+      const data = JSON.parse(scriptJsonLD.innerHTML);
+      
+      dados.titulo = data.name;
+      dados.sku = data.sku;
+      dados.descricao = data.description;
+      dados.condicao = data.itemCondition?.includes('New') ? 'Novo' : 'Usado';
+      
+      if (data.offers && data.offers.offers) {
+          dados.preco = parseFloat(data.offers.offers[0].price);
+          dados.moeda = data.offers.offers[0].priceCurrency;
+      } else if (data.offers) {
+          dados.preco = parseFloat(data.offers.price);
+          dados.moeda = data.offers.priceCurrency;
       }
+
+      if (data.aggregateRating) {
+        dados.notaMedia = data.aggregateRating.ratingValue;
+        dados.totalAvaliacoes = data.aggregateRating.reviewCount;
+      }
+      
+      dados.marca = data.brand?.name;
+      console.log("Dados extraídos com sucesso via JSON-LD!", dados);
+    }
+  } catch (error) {
+    console.error("Falha ao extrair dados do JSON-LD. Tentando via DOM.", error);
   }
 
+  // --- MÉTODO 2: EXTRAIR DADOS DO DOM (FALLBACK E DADOS COMPLEMENTARES) ---
+  // Usamos isso para pegar dados que não estão no JSON, como Vendas e Vendedor.
+  
+  // Função auxiliar para pegar texto de forma segura
+  const getText = (selector) => {
+    const element = document.querySelector(selector);
+    return element ? element.innerText.trim() : null;
+  };
+  
+  // Se o título não foi pego pelo JSON, tenta pelo seletor
+  if (!dados.titulo) {
+      dados.titulo = getText('.ui-pdp-title');
+  }
+  
+  // A quantidade de vendas raramente está no JSON, então sempre pegamos do DOM
+  const vendasTexto = getText('.ui-pdp-subtitle'); // Seletor: "Novo  |  +5000 vendidos"
+  let vendas = 0;
+  if (vendasTexto) {
+    const match = vendasTexto.match(/(\d[\d\.]*)/g); // Expressão regular para pegar números (incluindo com pontos)
+    if (match) {
+      vendas = parseInt(match[match.length - 1].replace(/\./g, '')); // Pega o último número e remove pontos
+    }
+  }
+  dados.vendas = vendas;
 
-  // --- PASSO 2: Calcular métricas simples ---
-  const faturamentoEstimado = !isNaN(preco) && !isNaN(vendas) ? (preco * vendas) : 0;
-
-
-  // --- PASSO 3: Criar e exibir o nosso painel ---
-  // Verifica se o painel já existe para não criar vários
-  let painelExistente = document.getElementById('meu-painel-analise');
-  if (painelExistente) {
-    painelExistente.remove();
+  // Extraindo informações do vendedor
+  const sellerElement = document.querySelector('.ui-pdp-seller__link-trigger');
+  if (sellerElement) {
+      dados.vendedorNome = sellerElement.innerText;
+      dados.vendedorLink = sellerElement.href;
+  } else {
+      // Tenta um seletor alternativo para o nome do vendedor
+      dados.vendedorNome = getText('.ui-pdp-seller__header__title');
   }
 
-  const painel = document.createElement('div');
-  painel.id = 'meu-painel-analise';
-  painel.innerHTML = `
-    <h3>📊 Minha Análise Rápida</h3>
-    <p><strong>Título:</strong> ${titulo || 'Não encontrado'}</p>
-    <p><strong>Preço:</strong> R$ ${preco.toFixed(2) || 'Não encontrado'}</p>
-    <p><strong>Vendas (aprox.):</strong> ${vendas || 'Não encontrado'}</p>
-    <hr>
-    <p><strong>Faturamento Estimado:</strong> R$ ${faturamentoEstimado.toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
-  `;
+  // --- CÁLCULOS FINAIS ---
+  dados.faturamentoEstimado = (dados.preco && dados.vendas) ? (dados.preco * dados.vendas) : 0;
 
-  // Adiciona o painel ao corpo da página
-  document.body.appendChild(painel);
+  exibirPainel(dados);
 }
 
 
-// --- INJETAR O BOTÃO NA PÁGINA ---
-const botaoAnalisar = document.createElement('button');
-botaoAnalisar.innerText = "Analisar Produto";
-botaoAnalisar.className = 'meu-botao-analise'; // Usaremos esta classe para estilizar
-document.body.appendChild(botaoAnalisar);
+function exibirPainel(dados) {
+  // Remove o painel antigo se existir
+  let painelExistente = document.getElementById('meu-painel-analise');
+  if (painelExistente) painelExistente.remove();
 
-// Adiciona um "ouvinte" de clique no botão
-botaoAnalisar.addEventListener('click', analisarProduto);
+  // Cria o novo painel
+  const painel = document.createElement('div');
+  painel.id = 'meu-painel-analise';
+  
+  // Formatação para exibir os dados de forma mais limpa
+  const formatNumber = (num) => num ? num.toLocaleString('pt-BR') : 'N/A';
+  const formatCurrency = (num) => num ? num.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : 'N/A';
+  
+  painel.innerHTML = `
+    <h3>📊 Análise Avançada</h3>
+    <div class="section">
+        <p><strong>Produto:</strong> ${dados.titulo || 'Não encontrado'}</p>
+        <p><strong>Marca:</strong> ${dados.marca || 'N/A'}</p>
+        <p><strong>Condição:</strong> ${dados.condicao || 'N/A'}</p>
+    </div>
+    <div class="section">
+        <p><strong>Preço:</strong> <span class="price">${formatCurrency(dados.preco)}</span></p>
+        <p><strong>Vendas:</strong> ${formatNumber(dados.vendas)}</p>
+        <p><strong>Faturamento Est.:</strong> ${formatCurrency(dados.faturamentoEstimado)}</p>
+    </div>
+    <div class="section">
+        <p><strong>Avaliações:</strong> ⭐ ${dados.notaMedia || 'N/A'} (${formatNumber(dados.totalAvaliacoes)} reviews)</p>
+    </div>
+    <div class="section">
+        <p><strong>Vendedor:</strong> <a href="${dados.vendedorLink || '#'}" target="_blank">${dados.vendedorNome || 'Não encontrado'}</a></p>
+    </div>
+  `;
+
+  document.body.appendChild(painel);
+  console.log("Análise concluída e painel exibido.");
+}
+
+
+// Cria o botão de análise somente se ele ainda não existir na página
+if (!document.querySelector('.meu-botao-analise')) {
+  const botaoAnalisar = document.createElement('button');
+  botaoAnalisar.innerText = "Análise Avançada";
+  botaoAnalisar.className = 'meu-botao-analise';
+  document.body.appendChild(botaoAnalisar);
+  botaoAnalisar.addEventListener('click', analisarProduto);
+}

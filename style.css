@@ -49,3 +49,32 @@
 #meu-painel-analise strong {
     color: #555;
 }
+
+/* Adicione isso ao final do seu style.css */
+
+#meu-painel-analise .section {
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+#meu-painel-analise .section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+#meu-painel-analise .price {
+  color: #00a650; /* Um verde para destacar o preço */
+  font-weight: bold;
+  font-size: 1.1em;
+}
+
+#meu-painel-analise a {
+    color: #3483fa;
+    text-decoration: none;
+}
+
+#meu-painel-analise a:hover {
+    text-decoration: underline;
+}

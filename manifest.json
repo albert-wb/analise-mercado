@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Meu Analisador de Produtos (com API)",
-  "version": "6.0",
+  "version": "6.1",
+  "description": "Uma extensão para analisar dados de produtos para uso pessoal, com integração API.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
-    "identity" 
+    "identity"
   ],
   "host_permissions": [
     "*://*.mercadolivre.com.br/*",
-    "https://api.mercadolibre.com/*" 
+    "https://api.mercadolibre.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -18,5 +19,12 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Analisador de Produtos"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.mercadolivre.com.br/*"],
+      "js": ["content.js"],
+      "css": ["style.css"]
+    }
+  ]
 }

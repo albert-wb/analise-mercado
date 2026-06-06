@@ -629,7 +629,7 @@
 <body>
   <div class="popup-header">
     <h1>📊 ANALISADOR PRO</h1>
-    <span class="version">v7.4</span>
+    <span class="version">v7.4.1</span>
   </div>
 
   <!-- Tabs Navigation -->
@@ -737,6 +737,23 @@
         </div>
         <button class="popup-btn popup-btn-primary popup-btn-small" id="saveTaxesBtn">💾 SALVAR TAXAS</button>
         <button class="popup-btn popup-btn-small" id="resetTaxesBtn" style="border-color: #484f58; color: #8b949e; background: transparent;">↩ RESTAURAR PADRÃO</button>
+      </div>
+    </div>
+
+    <!-- Impostos e Custos Globais -->
+    <div class="popup-section">
+      <div class="popup-section-title">🏛️ Impostos & Custos (Global)</div>
+      <div class="tax-config">
+        <div class="tax-row">
+          <label>Imposto (Simples/DAS/ICMS) (%)</label>
+          <input type="number" id="impostoGlobal" value="6.0" step="0.1" title="Percentual cobrado sobre o preço de venda">
+        </div>
+        <div class="tax-row">
+          <label>Custo Fixo Extra (Embalagem, etc) (R$)</label>
+          <input type="number" id="custoFixoGlobal" value="2.00" step="0.01" title="Custo fixo por pacote enviado">
+        </div>
+        <button class="popup-btn popup-btn-primary popup-btn-small" id="saveGlobalCostsBtn">💾 SALVAR IMPOSTOS</button>
+        <button class="popup-btn popup-btn-small" id="resetGlobalCostsBtn" style="border-color: #484f58; color: #8b949e; background: transparent;">↩ ZERAR IMPOSTOS</button>
       </div>
     </div>
 

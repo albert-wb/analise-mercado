@@ -494,39 +494,25 @@ function triggerSeoSearch() {
 }
 
 function fetchMlSuggestions(query) {
-  const url = `https://http2.mlstatic.com/resources/sites/MLB/autosuggest?q=${encodeURIComponent(query)}`;
-  
-  fetch(url)
-    .then(response => {
-      if (!response.ok) throw new Error('Network error');
-      return response.json();
-    })
-    .then(data => {
-      const suggestions = (data.suggested_queries || []).map(item => item.q);
-      renderSuggestions(suggestions, 'ml');
-    })
-    .catch(error => {
-      console.error('Erro sugestões ML:', error);
+  chrome.runtime.sendMessage({ type: 'fetchMlSuggestions', query }, (response) => {
+    if (chrome.runtime.lastError || !response || !response.success) {
+      console.error('Erro sugestões ML:', chrome.runtime.lastError || response?.error);
       seoResultsList.innerHTML = '<div class="tools-list-empty">Não foi possível carregar sugestões do Mercado Livre.</div>';
-    });
+      return;
+    }
+    renderSuggestions(response.suggestions, 'ml');
+  });
 }
 
 function fetchShopeeSuggestions(query) {
-  const url = `https://shopee.com.br/api/v4/search/search_hint?keyword=${encodeURIComponent(query)}`;
-  
-  fetch(url)
-    .then(response => {
-      if (!response.ok) throw new Error('Network error');
-      return response.json();
-    })
-    .then(data => {
-      const suggestions = (data.keywords || []).map(item => item.keyword);
-      renderSuggestions(suggestions, 'shopee');
-    })
-    .catch(error => {
-      console.error('Erro sugestões Shopee:', error);
+  chrome.runtime.sendMessage({ type: 'fetchShopeeSuggestions', query }, (response) => {
+    if (chrome.runtime.lastError || !response || !response.success) {
+      console.error('Erro sugestões Shopee:', chrome.runtime.lastError || response?.error);
       seoResultsList.innerHTML = '<div class="tools-list-empty">Não foi possível carregar sugestões da Shopee.</div>';
-    });
+      return;
+    }
+    renderSuggestions(response.suggestions, 'shopee');
+  });
 }
 
 function renderSuggestions(suggestions, platform) {
@@ -598,10 +584,59 @@ function renderSuggestions(suggestions, platform) {
 }
 
 // ==================================================================
+//  IMPOSTOS E CUSTOS GLOBAIS
+// ==================================================================
+
+function loadGlobalCostsConfig() {
+  chrome.runtime.sendMessage({ type: 'getGlobalCosts' }, (response) => {
+    if (chrome.runtime.lastError || !response) return;
+
+    const costs = response.costs || { imposto: 6.0, custoFixo: 2.0 };
+    document.getElementById('impostoGlobal').value = costs.imposto.toFixed(1);
+    document.getElementById('custoFixoGlobal').value = costs.custoFixo.toFixed(2);
+  });
+}
+
+const saveGlobalCostsBtn = document.getElementById('saveGlobalCostsBtn');
+if (saveGlobalCostsBtn) {
+  saveGlobalCostsBtn.addEventListener('click', () => {
+    const impostoInput = parseFloat(document.getElementById('impostoGlobal').value);
+    const custoFixoInput = parseFloat(document.getElementById('custoFixoGlobal').value);
+    
+    const costs = {
+      imposto: isNaN(impostoInput) ? 6.0 : impostoInput,
+      custoFixo: isNaN(custoFixoInput) ? 2.0 : custoFixoInput,
+    };
+
+    chrome.runtime.sendMessage({ type: 'saveGlobalCosts', costs }, (response) => {
+      if (response?.success) {
+        showMessage('Impostos globais salvos!', 'success');
+      } else {
+        showMessage('Erro ao salvar impostos.', 'error');
+      }
+    });
+  });
+}
+
+const resetGlobalCostsBtn = document.getElementById('resetGlobalCostsBtn');
+if (resetGlobalCostsBtn) {
+  resetGlobalCostsBtn.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'saveGlobalCosts', costs: null }, (response) => {
+      if (response?.success) {
+        document.getElementById('impostoGlobal').value = '0.0';
+        document.getElementById('custoFixoGlobal').value = '0.00';
+        showMessage('Impostos zerados.', 'success');
+      }
+    });
+  });
+}
+
+// ==================================================================
 //  INICIALIZAÇÃO
 // ==================================================================
 
 checkAuthStatus();
 loadTaxConfig();
 loadShopeeTaxConfig();
+loadGlobalCostsConfig();
 loadGarimpoList();

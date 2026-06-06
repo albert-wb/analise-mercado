@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Meu Analisador de Produtos (com API)",
-  "version": "7.4",
+  "version": "7.4.1",
   "description": "Extensão profissional para análise de viabilidade e lucratividade de produtos no Mercado Livre e Shopee. Garimpo local, métricas em buscas, calculadora financeira, OAuth2, ferramentas EAN e SEO.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
     "identity",
-    "alarms"
+    "alarms",
+    "declarativeNetRequest"
   ],
   "host_permissions": [
     "*://*.mercadolivre.com.br/*",

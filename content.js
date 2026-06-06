@@ -1,4 +1,4 @@
-// content.js — Analisador de Produtos v7.3 (ML + Shopee + Garimpo)
+// content.js — Analisador de Produtos v7.4.1 (ML + Shopee + Garimpo)
 
 // ==================================================================
 //  CONSTANTES E ESTADO
@@ -19,6 +19,7 @@ const TAXAS_SHOPEE = {
 let dadosProduto = {};
 let taxasCustomizadas = null;
 let taxasShopeeCustomizadas = null;
+let custosGlobais = null;
 
 /**
  * Detects which platform we are on.
@@ -35,13 +36,41 @@ const CURRENT_PLATFORM = detectPlatform();
 
 // Load custom taxes from storage
 chrome.runtime.sendMessage({ type: 'getCustomTaxes' }, (response) => {
+  if (chrome.runtime.lastError) return;
   if (response?.success && response.taxes) {
     taxasCustomizadas = response.taxes;
   }
 });
 chrome.runtime.sendMessage({ type: 'getShopeeCustomTaxes' }, (response) => {
+  if (chrome.runtime.lastError) return;
   if (response?.success && response.taxes) {
     taxasShopeeCustomizadas = response.taxes;
+  }
+});
+chrome.runtime.sendMessage({ type: 'getGlobalCosts' }, (response) => {
+  if (chrome.runtime.lastError) return;
+  if (response?.success && response.costs) {
+    custosGlobais = response.costs;
+  } else {
+    custosGlobais = { imposto: 6.0, custoFixo: 2.0 };
+  }
+});
+
+// Sincronizar configurações dinamicamente quando alteradas no popup
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local') {
+    if (changes.custom_taxes) taxasCustomizadas = changes.custom_taxes.newValue;
+    if (changes.shopee_custom_taxes) taxasShopeeCustomizadas = changes.shopee_custom_taxes.newValue;
+    if (changes.global_costs) custosGlobais = changes.global_costs.newValue;
+    
+    // Se o painel estiver aberto, recalcular
+    if (document.getElementById('meu-painel-analise')) {
+      if (CURRENT_PLATFORM === 'shopee') {
+        if (typeof calcularLucroShopee === 'function') calcularLucroShopee();
+      } else {
+        if (typeof calcularLucro === 'function') calcularLucro();
+      }
+    }
   }
 });
 
@@ -312,6 +341,10 @@ function exibirPainel() {
               <span class="hud-result-value" id="resTarifaML">R$ 0,00</span>
             </div>
             <div class="hud-result-row">
+              <span class="hud-result-label">Impostos & Custos</span>
+              <span class="hud-result-value" id="resImpostos">R$ 0,00</span>
+            </div>
+            <div class="hud-result-row">
               <span class="hud-result-label">Valor Recebido</span>
               <span class="hud-result-value hud-currency" id="resValorRecebido">R$ 0,00</span>
             </div>
@@ -327,6 +360,25 @@ function exibirPainel() {
               <span class="hud-result-label">ROI</span>
               <span class="hud-result-value" id="resROI">0,00%</span>
             </div>
+          </div>
+
+          <!-- Matriz de Sensibilidade -->
+          <div class="hud-matrix-section" id="matrixSection" style="display:none; margin-top: 15px;">
+             <div class="hud-section-header" style="padding: 0; background: transparent; border: none; margin-bottom: 8px;">
+               <span class="hud-section-title" style="font-size: 11px; color: var(--hud-text-secondary);">📈 Matriz de Sensibilidade (Preço vs. Lucro)</span>
+             </div>
+             <table class="hud-matrix-table" style="width: 100%; font-size: 11px; border-collapse: collapse;">
+               <thead>
+                 <tr style="color: var(--hud-text-secondary); text-align: right; border-bottom: 1px solid var(--hud-border);">
+                   <th style="text-align: left; padding: 4px;">Var.</th>
+                   <th style="padding: 4px;">Preço</th>
+                   <th style="padding: 4px;">Lucro</th>
+                   <th style="padding: 4px;">Margem</th>
+                 </tr>
+               </thead>
+               <tbody id="matrixTableBody">
+               </tbody>
+             </table>
           </div>
         </div>
       </div>
@@ -395,10 +447,15 @@ function calcularLucro() {
   const custoFixoML = precoVenda < taxas.limiteCustoFixo ? taxas.custoFixo : 0;
   const tarifaTotalML = comissaoML + custoFixoML;
 
+  const impostoGlobal = (custosGlobais?.imposto || 0) / 100;
+  const custoFixoGlobal = custosGlobais?.custoFixo || 0;
+  const valorImposto = precoVenda * impostoGlobal;
+  const totalImpostosECustosExtras = valorImposto + custoFixoGlobal;
+
   const valorRecebido = precoVenda - tarifaTotalML - custoFrete;
-  const lucro = valorRecebido - custoProduto;
+  const lucro = valorRecebido - custoProduto - totalImpostosECustosExtras;
   const margem = precoVenda > 0 ? (lucro / precoVenda) * 100 : 0;
-  const custoTotal = custoProduto + custoFrete;
+  const custoTotal = custoProduto + custoFrete + totalImpostosECustosExtras;
   const roi = custoTotal > 0 ? (lucro / custoTotal) * 100 : 0;
 
   // Atualizar valores
@@ -408,6 +465,7 @@ function calcularLucro() {
   };
 
   setVal('resTarifaML', formatCurrency(tarifaTotalML));
+  setVal('resImpostos', formatCurrency(totalImpostosECustosExtras));
   setVal('resValorRecebido', formatCurrency(valorRecebido));
   setVal('resLucro', formatCurrency(lucro));
   setVal('resMargem', `${margem.toFixed(2)}%`);
@@ -452,9 +510,62 @@ function calcularLucro() {
     scoreBar.classList.add(scoreClass);
     scoreValue.classList.add(scoreClass);
     scoreValue.innerText = `${margem.toFixed(1)}%`;
+    
+    // Renderizar a Matriz de Sensibilidade apenas quando temos custo do produto
+    renderMatrixMeli(precoVenda, custoProduto, custoFrete, taxas, tipoAnuncio);
   } else if (scoreSection) {
     scoreSection.style.display = 'none';
+    const matrixSection = document.getElementById('matrixSection');
+    if (matrixSection) matrixSection.style.display = 'none';
   }
+}
+
+function renderMatrixMeli(precoAtual, custoProduto, custoFrete, taxas, tipoAnuncio) {
+  const matrixSection = document.getElementById('matrixSection');
+  const matrixTableBody = document.getElementById('matrixTableBody');
+  if (!matrixSection || !matrixTableBody) return;
+
+  matrixSection.style.display = 'block';
+
+  const impostoGlobal = (custosGlobais?.imposto || 0) / 100;
+  const custoFixoGlobal = custosGlobais?.custoFixo || 0;
+  const taxaPercentual = taxas.taxasPorAnuncio[tipoAnuncio];
+
+  const variacoes = [-0.10, -0.05, 0, 0.05, 0.10];
+  const variacoesLabels = ['-10%', '-5%', 'Atual', '+5%', '+10%'];
+
+  let html = '';
+
+  variacoes.forEach((variacao, index) => {
+    const precoSimulado = precoAtual * (1 + variacao);
+    
+    const comissaoML = precoSimulado * taxaPercentual;
+    const custoFixoML = precoSimulado < taxas.limiteCustoFixo ? taxas.custoFixo : 0;
+    const tarifaTotalML = comissaoML + custoFixoML;
+
+    const valorImposto = precoSimulado * impostoGlobal;
+    const totalImpostos = valorImposto + custoFixoGlobal;
+
+    const valorRecebido = precoSimulado - tarifaTotalML - custoFrete;
+    const lucro = valorRecebido - custoProduto - totalImpostos;
+    const margem = precoSimulado > 0 ? (lucro / precoSimulado) * 100 : 0;
+
+    const isAtual = variacao === 0;
+    const rowBg = isAtual ? 'rgba(0, 255, 136, 0.1)' : 'transparent';
+    const lucroColor = lucro >= 0 ? 'var(--hud-accent-green)' : 'var(--hud-accent-red)';
+    const fontW = isAtual ? 'bold' : 'normal';
+
+    html += `
+      <tr style="text-align: right; background: ${rowBg}; font-weight: ${fontW};">
+        <td style="text-align: left; padding: 4px;">${variacoesLabels[index]}</td>
+        <td style="padding: 4px;">${formatCurrency(precoSimulado)}</td>
+        <td style="padding: 4px; color: ${lucroColor};">${formatCurrency(lucro)}</td>
+        <td style="padding: 4px; color: ${lucroColor};">${margem.toFixed(1)}%</td>
+      </tr>
+    `;
+  });
+
+  matrixTableBody.innerHTML = html;
 }
 
 // ==================================================================
@@ -890,6 +1001,22 @@ function extrairDadosShopee() {
     let dados = {};
     dados.plataforma = 'shopee';
 
+    // --- JSON-LD Data Extraction (Most Reliable) ---
+    let ldPrice = 0;
+    let ldSales = 0;
+    let ldRating = 0;
+    const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+    for (const script of scripts) {
+      try {
+        const json = JSON.parse(script.innerText);
+        if (json['@type'] === 'Product') {
+          if (json.offers && json.offers.price) ldPrice = parseFloat(json.offers.price);
+          if (json.aggregateRating && json.aggregateRating.reviewCount) ldSales = parseInt(json.aggregateRating.reviewCount, 10);
+          if (json.aggregateRating && json.aggregateRating.ratingValue) ldRating = parseFloat(json.aggregateRating.ratingValue);
+        }
+      } catch (e) {}
+    }
+
     // --- Title ---
     const titleEl = document.querySelector(
       '[data-sqe="name"], [class*="product-briefing"] [class*="title"], ' +
@@ -898,40 +1025,67 @@ function extrairDadosShopee() {
     dados.titulo = titleEl?.innerText?.trim() || document.title.split('|')[0]?.trim() || 'N/A';
 
     // --- Price ---
-    const priceSelectors = [
-      '[data-sqe="price"]',
-      '[class*="price"] [class*="current"]',
-      '[class*="pmmxKx"]',
-      '[class*="G27FPf"]',
-      '[class*="product-briefing"] [class*="price"]',
-    ];
-    for (const sel of priceSelectors) {
-      const el = document.querySelector(sel);
-      if (el) {
-        const text = el.innerText.replace(/[^\d,.]/g, '').replace(/\./g, '').replace(',', '.');
-        const value = parseFloat(text);
-        if (!isNaN(value) && value > 0) {
-          dados.preco = value;
-          break;
+    let precoEncontrado = ldPrice;
+    if (!precoEncontrado) {
+      // Find elements containing only "R$" (Shopee splits currency and value)
+      const currencyElements = Array.from(document.querySelectorAll('span, div'))
+        .filter(el => el.textContent.trim() === 'R$');
+      
+      for (const currencyEl of currencyElements) {
+        const container = currencyEl.parentElement;
+        if (container) {
+          const text = container.innerText.replace(/[^\d,.]/g, '').replace(/\./g, '').replace(',', '.');
+          const value = parseFloat(text);
+          if (!isNaN(value) && value > 0) {
+            precoEncontrado = value;
+            break;
+          }
         }
       }
     }
+    
+    // Fallback seletores comuns
+    if (!precoEncontrado) {
+      const priceSelectors = [
+        '[data-sqe="price"]', '[class*="price"] [class*="current"]',
+        '[class*="pmmxKx"]', '[class*="G27FPf"]', '.pqTWsK', '.Yreb5F'
+      ];
+      for (const sel of priceSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const text = el.innerText.replace(/[^\d,.]/g, '').replace(/\./g, '').replace(',', '.');
+          const value = parseFloat(text);
+          if (!isNaN(value) && value > 0) {
+            precoEncontrado = value;
+            break;
+          }
+        }
+      }
+    }
+    dados.preco = precoEncontrado || 0;
     if (!dados.preco) dados.preco = 0;
     dados.valorUnitario = dados.preco;
 
     // --- Sales ---
-    let vendas = 0;
-    const allText = document.body.innerText || '';
-    const vendasMatch = allText.match(/(\d[\d.]*)\s*(mil)?\s*vendido/i);
-    if (vendasMatch) {
-      vendas = parseInt(vendasMatch[1].replace(/\./g, ''), 10);
-      if (vendasMatch[2]) vendas *= 1000;
+    let vendas = ldSales;
+    if (!vendas) {
+      const allText = document.body.innerText || '';
+      const vendasMatch = allText.match(/(\d+[\d.,]*)\s*(mil|k)?\s*vendido/i) || allText.match(/(\d+[\d.,]*)\s*Avaliações/i);
+      if (vendasMatch) {
+        let numStr = vendasMatch[1].replace(/[^\d,]/g, '').replace(',', '.');
+        vendas = parseFloat(numStr);
+        if (vendasMatch[2]?.toLowerCase() === 'mil' || vendasMatch[2]?.toLowerCase() === 'k') vendas *= 1000;
+      }
     }
-    dados.vendas = vendas;
+    dados.vendas = Math.round(vendas || 0);
 
     // --- Rating ---
-    const ratingEl = document.querySelector('[class*="rating"] [class*="score"], [class*="OitLRu"]');
-    dados.rating = ratingEl ? parseFloat(ratingEl.innerText) : 0;
+    let rating = ldRating;
+    if (!rating) {
+      const ratingEl = document.querySelector('[class*="rating"] [class*="score"], [class*="OitLRu"]');
+      rating = ratingEl ? parseFloat(ratingEl.innerText) : 0;
+    }
+    dados.rating = rating;
 
     // --- Category / Ad type ---
     dados.tipoAnuncio = 'Shopee';
@@ -945,7 +1099,7 @@ function extrairDadosShopee() {
 
     // --- Seller ---
     const sellerEl = document.querySelector(
-      '[class*="seller"] [class*="name"], [class*="shop-name"], [class*="page-product__shop"] a'
+      '[class*="seller"] [class*="name"], [class*="shop-name"], [class*="page-product__shop"] a, [class*="VlD_Re"]'
     );
     dados.sellerNick = sellerEl?.innerText?.trim() || null;
 
@@ -1045,6 +1199,10 @@ function exibirPainelShopee() {
               <span class="hud-result-value" id="resTarifaML">R$ 0,00</span>
             </div>
             <div class="hud-result-row">
+              <span class="hud-result-label">Impostos & Custos</span>
+              <span class="hud-result-value" id="resImpostos">R$ 0,00</span>
+            </div>
+            <div class="hud-result-row">
               <span class="hud-result-label">Valor Recebido</span>
               <span class="hud-result-value hud-currency" id="resValorRecebido">R$ 0,00</span>
             </div>
@@ -1060,6 +1218,25 @@ function exibirPainelShopee() {
               <span class="hud-result-label">ROI</span>
               <span class="hud-result-value" id="resROI">0,00%</span>
             </div>
+          </div>
+
+          <!-- Matriz de Sensibilidade -->
+          <div class="hud-matrix-section" id="matrixSection" style="display:none; margin-top: 15px;">
+             <div class="hud-section-header" style="padding: 0; background: transparent; border: none; margin-bottom: 8px;">
+               <span class="hud-section-title" style="font-size: 11px; color: var(--hud-text-secondary);">📈 Matriz de Sensibilidade (Preço vs. Lucro)</span>
+             </div>
+             <table class="hud-matrix-table" style="width: 100%; font-size: 11px; border-collapse: collapse;">
+               <thead>
+                 <tr style="color: var(--hud-text-secondary); text-align: right; border-bottom: 1px solid var(--hud-border);">
+                   <th style="text-align: left; padding: 4px;">Var.</th>
+                   <th style="padding: 4px;">Preço</th>
+                   <th style="padding: 4px;">Lucro</th>
+                   <th style="padding: 4px;">Margem</th>
+                 </tr>
+               </thead>
+               <tbody id="matrixTableBody">
+               </tbody>
+             </table>
           </div>
         </div>
       </div>
@@ -1104,14 +1281,18 @@ function calcularLucroShopee() {
   const custoProduto = parseFloat(document.getElementById('custoProduto')?.value) || 0;
   const custoFrete = parseFloat(document.getElementById('custoFrete')?.value) || 0;
 
-  const comissaoShopee = precoVenda * taxas.comissao;
-  const taxaFixaShopee = taxas.taxaFixa;
-  const tarifaTotal = comissaoShopee + taxaFixaShopee;
+  const comissaoTotal = precoVenda * taxas.comissao;
+  const tarifaShopee = comissaoTotal + taxas.taxaFixa;
 
-  const valorRecebido = precoVenda - tarifaTotal - custoFrete;
-  const lucro = valorRecebido - custoProduto;
+  const impostoGlobal = (custosGlobais?.imposto || 0) / 100;
+  const custoFixoGlobal = custosGlobais?.custoFixo || 0;
+  const valorImposto = precoVenda * impostoGlobal;
+  const totalImpostosECustosExtras = valorImposto + custoFixoGlobal;
+
+  const valorRecebido = precoVenda - tarifaShopee - custoFrete;
+  const lucro = valorRecebido - custoProduto - totalImpostosECustosExtras;
   const margem = precoVenda > 0 ? (lucro / precoVenda) * 100 : 0;
-  const custoTotal = custoProduto + custoFrete;
+  const custoTotal = custoProduto + custoFrete + totalImpostosECustosExtras;
   const roi = custoTotal > 0 ? (lucro / custoTotal) * 100 : 0;
 
   const setVal = (id, text) => {
@@ -1119,7 +1300,8 @@ function calcularLucroShopee() {
     if (el) el.innerText = text;
   };
 
-  setVal('resTarifaML', formatCurrency(tarifaTotal));
+  setVal('resTarifaML', formatCurrency(tarifaShopee));
+  setVal('resImpostos', formatCurrency(totalImpostosECustosExtras));
   setVal('resValorRecebido', formatCurrency(valorRecebido));
   setVal('resLucro', formatCurrency(lucro));
   setVal('resMargem', `${margem.toFixed(2)}%`);
@@ -1154,9 +1336,59 @@ function calcularLucroShopee() {
     scoreBar.classList.add(scoreClass);
     scoreValue.classList.add(scoreClass);
     scoreValue.innerText = `${margem.toFixed(1)}%`;
+    
+    renderMatrixShopee(precoVenda, custoProduto, custoFrete, taxas);
   } else if (scoreSection) {
     scoreSection.style.display = 'none';
+    const matrixSection = document.getElementById('matrixSection');
+    if (matrixSection) matrixSection.style.display = 'none';
   }
+}
+
+function renderMatrixShopee(precoAtual, custoProduto, custoFrete, taxas) {
+  const matrixSection = document.getElementById('matrixSection');
+  const matrixTableBody = document.getElementById('matrixTableBody');
+  if (!matrixSection || !matrixTableBody) return;
+
+  matrixSection.style.display = 'block';
+
+  const impostoGlobal = (custosGlobais?.imposto || 0) / 100;
+  const custoFixoGlobal = custosGlobais?.custoFixo || 0;
+
+  const variacoes = [-0.10, -0.05, 0, 0.05, 0.10];
+  const variacoesLabels = ['-10%', '-5%', 'Atual', '+5%', '+10%'];
+
+  let html = '';
+
+  variacoes.forEach((variacao, index) => {
+    const precoSimulado = precoAtual * (1 + variacao);
+    
+    const comissaoTotal = precoSimulado * taxas.comissao;
+    const tarifaShopee = comissaoTotal + taxas.taxaFixa;
+
+    const valorImposto = precoSimulado * impostoGlobal;
+    const totalImpostos = valorImposto + custoFixoGlobal;
+
+    const valorRecebido = precoSimulado - tarifaShopee - custoFrete;
+    const lucro = valorRecebido - custoProduto - totalImpostos;
+    const margem = precoSimulado > 0 ? (lucro / precoSimulado) * 100 : 0;
+
+    const isAtual = variacao === 0;
+    const rowBg = isAtual ? 'rgba(0, 255, 136, 0.1)' : 'transparent';
+    const lucroColor = lucro >= 0 ? 'var(--hud-accent-green)' : 'var(--hud-accent-red)';
+    const fontW = isAtual ? 'bold' : 'normal';
+
+    html += `
+      <tr style="text-align: right; background: ${rowBg}; font-weight: ${fontW};">
+        <td style="text-align: left; padding: 4px;">${variacoesLabels[index]}</td>
+        <td style="padding: 4px;">${formatCurrency(precoSimulado)}</td>
+        <td style="padding: 4px; color: ${lucroColor};">${formatCurrency(lucro)}</td>
+        <td style="padding: 4px; color: ${lucroColor};">${margem.toFixed(1)}%</td>
+      </tr>
+    `;
+  });
+
+  matrixTableBody.innerHTML = html;
 }
 
 // ==================================================================
@@ -1335,9 +1567,19 @@ function checkUrlChange() {
   const currentUrl = window.location.href;
   if (currentUrl !== lastUrl) {
     lastUrl = currentUrl;
-    // URL changed — re-route
     removeAnalysisButton();
     routeContext();
+  } else {
+    // Evita que o botão de análise suma após a hidratação da DOM pelo React
+    if (CURRENT_PLATFORM === 'shopee' && isShopeeProductPage()) {
+      if (!document.querySelector('.meu-botao-analise')) {
+        createAnalysisButton(extrairDadosShopee);
+      }
+    } else if (CURRENT_PLATFORM === 'meli' && isProductPage()) {
+      if (!document.querySelector('.meu-botao-analise')) {
+        createAnalysisButton(extrairDados);
+      }
+    }
   }
 }
 

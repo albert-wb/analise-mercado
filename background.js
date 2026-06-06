@@ -311,6 +311,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return true;
     }
 
+    if (request.type === 'saveGlobalCosts') {
+        chrome.storage.local.set({ 'global_costs': request.costs })
+            .then(() => sendResponse({ success: true }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
+
+    if (request.type === 'getGlobalCosts') {
+        chrome.storage.local.get('global_costs')
+            .then(result => sendResponse({ success: true, costs: result.global_costs || null }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
+
     // ===== GARIMPO =====
 
     if (request.type === 'saveGarimpo') {
@@ -349,10 +363,89 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .catch(error => sendResponse({ success: false, error: error.message }));
         return true;
     }
+
+    // ===== AUTOCOMPLETE (Bypass CORS) =====
+
+    if (request.type === 'fetchMlSuggestions') {
+        const url = `https://http2.mlstatic.com/resources/sites/MLB/autosuggest?q=${encodeURIComponent(request.query)}`;
+        fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                const suggestions = (data.suggested_queries || []).map(item => item.q);
+                sendResponse({ success: true, suggestions });
+            })
+            .catch(err => sendResponse({ success: false, error: err.message }));
+        return true;
+    }
+
+    if (request.type === 'fetchShopeeSuggestions') {
+        const url = `https://shopee.com.br/api/v4/search/search_hint?keyword=${encodeURIComponent(request.query)}`;
+        fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                const suggestions = (data.keywords || []).map(item => item.keyword);
+                sendResponse({ success: true, suggestions });
+            })
+            .catch(err => sendResponse({ success: false, error: err.message }));
+        return true;
+    }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === TOKEN_REFRESH_ALARM) {
         refreshAccessToken().catch(() => {});
     }
+});
+
+// Setup DeclarativeNetRequest rules to remove Origin header from autocomplete calls
+function setupDeclarativeRules() {
+    if (!chrome.declarativeNetRequest) return;
+
+    const rules = [
+        {
+            id: 1,
+            priority: 1,
+            action: {
+                type: "modifyHeaders",
+                requestHeaders: [
+                    { header: "origin", operation: "remove" }
+                ]
+            },
+            condition: {
+                urlFilter: "||mlstatic.com/resources/sites/*/autosuggest",
+                resourceTypes: ["xmlhttprequest"]
+            }
+        },
+        {
+            id: 2,
+            priority: 1,
+            action: {
+                type: "modifyHeaders",
+                requestHeaders: [
+                    { header: "origin", operation: "remove" }
+                ]
+            },
+            condition: {
+                urlFilter: "||shopee.com.br/api/v4/search/search_hint",
+                resourceTypes: ["xmlhttprequest"]
+            }
+        }
+    ];
+
+    chrome.declarativeNetRequest.updateDynamicRules({
+        removeRuleIds: [1, 2],
+        addRules: rules
+    }).then(() => {
+        console.log("[DeclarativeNetRequest] Autocomplete Origin-stripping rules active.");
+    }).catch(err => {
+        console.error("[DeclarativeNetRequest] Error setting rules:", err);
+    });
+}
+
+// Run setup on startup
+setupDeclarativeRules();
+
+// Run setup when extension is installed or updated
+chrome.runtime.onInstalled.addListener(() => {
+    setupDeclarativeRules();
 });

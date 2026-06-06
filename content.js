@@ -209,12 +209,56 @@ function extrairDados() {
       dados.sellerNick = sellerMatch ? sellerMatch[1] : null;
     }
 
+    // --- Data de Criação do Anúncio ---
+    dados.dataCriacao = null;
+    dados.idadeDias = null;
+    dados.vendasPorDia = 0;
+    dados.vendasEstimadas30d = 0;
+
+    if (dados.productId) {
+      try {
+        const apiUrl = `https://api.mercadolibre.com/items/MLB${dados.productId}`;
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', apiUrl, false);
+        xhr.send();
+        if (xhr.status === 200) {
+          const itemData = JSON.parse(xhr.responseText);
+          if (itemData.date_created) dados.dataCriacao = itemData.date_created;
+          if (itemData.sold_quantity) dados.vendas = itemData.sold_quantity;
+        }
+      } catch (e) {}
+    }
+
+    if (!dados.dataCriacao) {
+      const allText = document.body.innerText || '';
+      const dateMatch = allText.match(/Publicado há (\d+)\s*(dia|mês|meses|ano|anos)/i);
+      if (dateMatch) {
+        const num = parseInt(dateMatch[1], 10);
+        const unit = dateMatch[2].toLowerCase();
+        const now = new Date();
+        if (unit.startsWith('dia')) now.setDate(now.getDate() - num);
+        else if (unit.startsWith('mês') || unit.startsWith('mese')) now.setMonth(now.getMonth() - num);
+        else if (unit.startsWith('ano')) now.setFullYear(now.getFullYear() - num);
+        dados.dataCriacao = now.toISOString();
+      }
+    }
+
+    if (dados.dataCriacao) {
+      const criado = new Date(dados.dataCriacao);
+      const agora = new Date();
+      dados.idadeDias = Math.max(1, Math.floor((agora - criado) / (1000 * 60 * 60 * 24)));
+      dados.vendasPorDia = dados.vendas / dados.idadeDias;
+      dados.vendasEstimadas30d = Math.round(dados.vendasPorDia * 30);
+    }
+
     // --- Volume Bruto ---
     dados.volumeBruto = (dados.valorUnitario && dados.vendas)
       ? dados.valorUnitario * dados.vendas : 0;
 
     dadosProduto = dados;
-    exibirPainel();
+    processarSnapshotsVendas(dadosProduto, () => {
+      exibirPainel();
+    });
   } catch (error) {
     exibirPainelErro('Falha ao extrair dados da página. Tente recarregar.');
   }
@@ -229,6 +273,17 @@ const formatCurrency = (num) =>
 
 const formatNumber = (num) =>
   num != null ? num.toLocaleString('pt-BR') : 'N/A';
+
+function formatIdade(dias) {
+  if (dias < 1) return 'Hoje';
+  if (dias < 30) return `${dias} dia${dias > 1 ? 's' : ''}`;
+  if (dias < 365) {
+    const meses = Math.floor(dias / 30);
+    return `${meses} ${meses > 1 ? 'meses' : 'mês'}`;
+  }
+  const anos = Math.floor(dias / 365);
+  return `${anos} ano${anos > 1 ? 's' : ''}`;
+}
 
 // ==================================================================
 //  PAINEL DE ERRO
@@ -308,13 +363,50 @@ function exibirPainel() {
             <span class="hud-data-value hud-currency">${formatCurrency(dadosProduto.valorUnitario)}</span>
           </div>
           <div class="hud-data-row">
-            <span class="hud-data-label">Vendas Estimadas</span>
+            <span class="hud-data-label">Vendas Totais</span>
             <span class="hud-data-value">${formatNumber(dadosProduto.vendas)}</span>
           </div>
+          ${dadosProduto.dataCriacao ? `
+          <div class="hud-data-row">
+            <span class="hud-data-label">⏱️ Idade</span>
+            <span class="hud-data-value">${formatIdade(dadosProduto.idadeDias)}</span>
+          </div>
+          <div class="hud-data-row">
+            <span class="hud-data-label">${dadosProduto.vendasReais30d !== undefined ? '📈 Vendas/30d (Real)' : '📈 Est. Vendas/30d'}</span>
+            <span class="hud-data-value" style="color: ${(dadosProduto.vendasReais30d !== undefined ? dadosProduto.vendasReais30d : dadosProduto.vendasEstimadas30d) > 30 ? 'var(--hud-accent-green)' : (dadosProduto.vendasReais30d !== undefined ? dadosProduto.vendasReais30d : dadosProduto.vendasEstimadas30d) > 10 ? 'var(--hud-accent-amber)' : 'var(--hud-accent-red)'};">
+              ${dadosProduto.vendasReais30d !== undefined ? formatNumber(dadosProduto.vendasReais30d) + ' un. <span style="font-size:9px; color:var(--hud-text-secondary);">(' + dadosProduto.diasRastreados + 'd medidos)</span>' : '~' + formatNumber(dadosProduto.vendasEstimadas30d) + ' un.'}
+            </span>
+          </div>
+          <div class="hud-data-row">
+            <span class="hud-data-label">🔥 Vendas/Dia</span>
+            <span class="hud-data-value" style="font-family: var(--hud-font-mono);">${dadosProduto.vendasPorDia.toFixed(1)}/dia</span>
+          </div>
+          ` : ''}
           <div class="hud-data-row">
             <span class="hud-data-label">Volume Bruto</span>
             <span class="hud-data-value hud-currency">${formatCurrency(dadosProduto.volumeBruto)}</span>
           </div>
+        </div>
+      </div>
+
+      <!-- Seção: Avaliações -->
+      <div class="hud-section" id="sectionAvaliacoes" style="display: none;">
+        <div class="hud-section-header">
+          <span class="hud-section-title">💬 Avaliações</span>
+          <span class="hud-section-arrow">▼</span>
+        </div>
+        <div class="hud-section-body" id="avaliacoesBody">
+          <div style="text-align: center; color: var(--hud-text-secondary); font-size: 11px; padding: 10px;">Carregando avaliações...</div>
+        </div>
+      </div>
+
+      <!-- Seção: SEO & Ficha -->
+      <div class="hud-section" id="sectionSEO" style="display: none;">
+        <div class="hud-section-header">
+          <span class="hud-section-title">🎯 SEO & Ficha</span>
+          <span class="hud-section-arrow">▼</span>
+        </div>
+        <div class="hud-section-body" id="seoBody">
         </div>
       </div>
 
@@ -390,6 +482,7 @@ function exibirPainel() {
     <!-- Barra de Ações -->
     <div class="hud-actions">
       <button class="hud-action-btn" id="btnCopiar" title="Copiar dados">📋 Copiar</button>
+      <button class="hud-action-btn" id="btnMidias" title="Baixar Mídias">📸 Mídias</button>
       <button class="hud-action-btn" id="btnGarimpo" title="Salvar no Garimpo">⭐ Garimpo</button>
       <button class="hud-action-btn" id="btnRecarregar" title="Recarregar dados">🔄 Atualizar</button>
     </div>
@@ -400,9 +493,13 @@ function exibirPainel() {
   // --- Event Listeners ---
   setupCalculadoraListeners();
   setupSectionToggle();
+  carregarAvaliacoes('meli');
+  carregarSEO();
 
   painel.querySelector('.hud-close-btn').addEventListener('click', () => painel.remove());
   painel.querySelector('#btnCopiar').addEventListener('click', copiarDados);
+  const btnMidias = painel.querySelector('#btnMidias');
+  if (btnMidias) btnMidias.addEventListener('click', baixarMidiasML);
   painel.querySelector('#btnGarimpo').addEventListener('click', salvarGarimpo);
   painel.querySelector('#btnRecarregar').addEventListener('click', extrairDados);
 
@@ -755,6 +852,23 @@ function extractPriceFromCard(cardEl) {
  * Extracts original (pre-discount) price from search card.
  * Looks for images with alt text starting with "Antes:".
  */
+function extractSellerNameFromCard(cardEl) {
+  const sellerEl = cardEl.querySelector('.ui-search-official-store-label, .ui-search-official-store-item__link');
+  if (sellerEl) {
+    const text = sellerEl.innerText.trim();
+    if (text.toLowerCase().includes('por ')) return text.split('por ')[1];
+    return text;
+  }
+  return null;
+}
+
+function extractLogisticsType(cardEl) {
+  const text = cardEl.innerText.toLowerCase();
+  if (text.includes('full')) return 'full';
+  if (text.includes('chegará hoje') || text.includes('chegará amanhã')) return 'flex';
+  return 'correios';
+}
+
 function extractOriginalPriceFromCard(cardEl) {
   const priceImages = cardEl.querySelectorAll('img[roledescription="Valor"], [roledescription="Valor"]');
   for (const img of priceImages) {
@@ -1112,7 +1226,9 @@ function extrairDadosShopee() {
     dados.productId = ids ? `${ids.shopId}.${ids.itemId}` : null;
 
     dadosProduto = dados;
-    exibirPainelShopee();
+    processarSnapshotsVendas(dadosProduto, () => {
+      exibirPainelShopee();
+    });
   } catch (error) {
     exibirPainelErro('Falha ao extrair dados da Shopee. Tente recarregar.');
   }
@@ -1165,9 +1281,25 @@ function exibirPainelShopee() {
             <span class="hud-data-value hud-currency">${formatCurrency(dadosProduto.valorUnitario)}</span>
           </div>
           <div class="hud-data-row">
-            <span class="hud-data-label">Vendas Estimadas</span>
+            <span class="hud-data-label">Vendas Totais</span>
             <span class="hud-data-value">${formatNumber(dadosProduto.vendas)}</span>
           </div>
+          ${dadosProduto.dataCriacao ? `
+          <div class="hud-data-row">
+            <span class="hud-data-label">⏱️ Idade</span>
+            <span class="hud-data-value">${formatIdade(dadosProduto.idadeDias)}</span>
+          </div>
+          <div class="hud-data-row">
+            <span class="hud-data-label">${dadosProduto.vendasReais30d !== undefined ? '📈 Vendas/30d (Real)' : '📈 Est. Vendas/30d'}</span>
+            <span class="hud-data-value" style="color: ${(dadosProduto.vendasReais30d !== undefined ? dadosProduto.vendasReais30d : dadosProduto.vendasEstimadas30d) > 30 ? 'var(--hud-accent-green)' : (dadosProduto.vendasReais30d !== undefined ? dadosProduto.vendasReais30d : dadosProduto.vendasEstimadas30d) > 10 ? 'var(--hud-accent-amber)' : 'var(--hud-accent-red)'};">
+              ${dadosProduto.vendasReais30d !== undefined ? formatNumber(dadosProduto.vendasReais30d) + ' un. <span style="font-size:9px; color:var(--hud-text-secondary);">(' + dadosProduto.diasRastreados + 'd medidos)</span>' : '~' + formatNumber(dadosProduto.vendasEstimadas30d) + ' un.'}
+            </span>
+          </div>
+          <div class="hud-data-row">
+            <span class="hud-data-label">🔥 Vendas/Dia</span>
+            <span class="hud-data-value" style="font-family: var(--hud-font-mono);">${dadosProduto.vendasPorDia.toFixed(1)}/dia</span>
+          </div>
+          ` : ''}
           <div class="hud-data-row">
             <span class="hud-data-label">Volume Bruto</span>
             <span class="hud-data-value hud-currency">${formatCurrency(dadosProduto.volumeBruto)}</span>
@@ -1245,6 +1377,7 @@ function exibirPainelShopee() {
     <div class="hud-toast" id="hudToast">Copiado!</div>
     <div class="hud-actions">
       <button class="hud-action-btn" id="btnCopiar" title="Copiar dados">📋 Copiar</button>
+      <button class="hud-action-btn" id="btnMidias" title="Baixar Mídias">📸 Mídias</button>
       <button class="hud-action-btn" id="btnGarimpo" title="Salvar no Garimpo">⭐ Garimpo</button>
       <button class="hud-action-btn" id="btnRecarregar" title="Recarregar dados">🔄 Atualizar</button>
     </div>
@@ -1257,6 +1390,8 @@ function exibirPainelShopee() {
 
   painel.querySelector('.hud-close-btn').addEventListener('click', () => painel.remove());
   painel.querySelector('#btnCopiar').addEventListener('click', copiarDados);
+  const btnMidias = painel.querySelector('#btnMidias');
+  if (btnMidias) btnMidias.addEventListener('click', baixarMidiasML);
   painel.querySelector('#btnGarimpo').addEventListener('click', salvarGarimpo);
   painel.querySelector('#btnRecarregar').addEventListener('click', extrairDadosShopee);
 

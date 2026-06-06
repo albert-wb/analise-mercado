@@ -389,6 +389,103 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             .catch(err => sendResponse({ success: false, error: err.message }));
         return true;
     }
+
+    // ===== REVIEWS (AVALIAÇÕES) =====
+
+    if (request.type === 'fetchMlReviews') {
+        const url = `https://api.mercadolibre.com/reviews/item/${request.productId}`;
+        fetch(url)
+            .then(res => res.json())
+            .then(data => sendResponse({ success: true, data }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
+
+    if (request.type === 'fetchShopeeReviews') {
+        const url = `https://shopee.com.br/api/v2/item/get_ratings?filter=0&flag=1&itemid=${request.itemId}&limit=10&offset=0&shopid=${request.shopId}&type=0`;
+        fetch(url)
+            .then(res => res.json())
+            .then(data => sendResponse({ success: true, data }))
+            .catch(error => sendResponse({ success: false, error: error.message }));
+        return true;
+    }
+
+    // ===== SNAPSHOTS DE VENDAS (HISTÓRICO REAL) =====
+
+    if (request.type === 'saveSnapshot') {
+        const { productId, vendas } = request.data;
+        if (!productId || vendas === undefined) {
+             sendResponse({ success: false });
+             return;
+        }
+        chrome.storage.local.get(['snapshots'], (res) => {
+             let snaps = res.snapshots || {};
+             if (!snaps[productId]) snaps[productId] = [];
+             
+             const today = new Date().toISOString().split('T')[0];
+             const existing = snaps[productId].find(s => s.date === today);
+             if (!existing) {
+                 snaps[productId].push({ date: today, vendas });
+                 // keep last 60 days
+                 if (snaps[productId].length > 60) snaps[productId].shift();
+                 chrome.storage.local.set({ snapshots: snaps }, () => {
+                     sendResponse({ success: true });
+                 });
+             } else {
+                 if (existing.vendas < vendas) existing.vendas = vendas;
+                 chrome.storage.local.set({ snapshots: snaps }, () => {
+                     sendResponse({ success: true });
+                 });
+             }
+        });
+        return true;
+    }
+
+    if (request.type === 'getSnapshot') {
+        const { productId } = request;
+        chrome.storage.local.get(['snapshots'], (res) => {
+             const snaps = res.snapshots || {};
+             sendResponse({ success: true, history: snaps[productId] || [] });
+        });
+        return true;
+    }
+
+    // ===== DOWNLOADS =====
+
+    if (request.type === 'downloadMedia') {
+        const urls = request.urls || [];
+        const prefix = request.prefix || 'midia';
+        
+        let baixadas = 0;
+        let falhas = 0;
+
+        Promise.all(urls.map((url, index) => {
+            return new Promise(resolve => {
+                const matchExt = url.match(/\.([a-zA-Z0-9]+)(?:[\?#]|$)/);
+                const ext = matchExt ? matchExt[1] : 'jpg';
+                const filename = `analisador_pro/${prefix}_${index + 1}.${ext}`;
+
+                chrome.downloads.download({
+                    url: url,
+                    filename: filename,
+                    conflictAction: 'uniquify',
+                    saveAs: false
+                }, (downloadId) => {
+                    if (chrome.runtime.lastError) {
+                        console.error('Download erro:', chrome.runtime.lastError);
+                        falhas++;
+                    } else {
+                        baixadas++;
+                    }
+                    resolve();
+                });
+            });
+        })).then(() => {
+            sendResponse({ success: true, baixadas, falhas, total: urls.length });
+        });
+
+        return true;
+    }
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {

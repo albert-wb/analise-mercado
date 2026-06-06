@@ -9,7 +9,8 @@
     "storage",
     "identity",
     "alarms",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "downloads"
   ],
   "host_permissions": [
     "*://*.mercadolivre.com.br/*",

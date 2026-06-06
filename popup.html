@@ -1,14 +1,767 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-    <style>
-        body { width: 200px; text-align: center; font-family: Arial, sans-serif; }
-        button { padding: 10px 15px; font-size: 14px; cursor: pointer; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Analisador Pro - Ferramenta de Análise de Mercado</title>
+  <meta name="description" content="Extensão profissional para análise de viabilidade e lucratividade de produtos no Mercado Livre e Shopee. Garimpo local, métricas em buscas, calculadora financeira, OAuth2, ferramentas EAN e SEO.">
+  <meta property="og:title" content="Analisador Pro - Ferramenta de Análise de Mercado">
+  <meta property="og:description" content="Extensão profissional para análise de viabilidade e lucratividade de produtos no Mercado Livre e Shopee.">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 420px;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+    }
+
+    /* Header */
+    .popup-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px;
+      border-bottom: 1px solid #30363d;
+      background: #161b22;
+    }
+
+    .popup-header h1 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: #00ff88;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .popup-header .version {
+      font-size: 10px;
+      color: #484f58;
+      font-family: 'JetBrains Mono', monospace;
+      margin-left: auto;
+    }
+
+    /* Status Section */
+    .popup-section {
+      padding: 14px 16px;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .popup-section-title {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #8b949e;
+      margin-bottom: 10px;
+    }
+
+    /* Auth Status */
+    .auth-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #1c2128;
+      border: 1px solid #30363d;
+      border-radius: 2px;
+    }
+
+    .auth-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .auth-dot.online { background: #00ff88; box-shadow: 0 0 8px rgba(0, 255, 136, 0.5); }
+    .auth-dot.offline { background: #484f58; }
+    .auth-dot.expired { background: #f0b429; box-shadow: 0 0 8px rgba(240, 180, 41, 0.4); }
+
+    .auth-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex: 1;
+    }
+
+    .auth-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .auth-detail {
+      font-size: 10px;
+      color: #8b949e;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Buttons */
+    .popup-btn {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #30363d;
+      border-radius: 2px;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .popup-btn-primary {
+      background: rgba(0, 255, 136, 0.1);
+      color: #00ff88;
+      border-color: rgba(0, 255, 136, 0.3);
+    }
+
+    .popup-btn-primary:hover {
+      background: rgba(0, 255, 136, 0.2);
+      border-color: #00ff88;
+      box-shadow: 0 0 16px rgba(0, 255, 136, 0.15);
+    }
+
+    .popup-btn-danger {
+      background: rgba(255, 59, 59, 0.05);
+      color: #ff3b3b;
+      border-color: rgba(255, 59, 59, 0.2);
+    }
+
+    .popup-btn-danger:hover {
+      background: rgba(255, 59, 59, 0.15);
+      border-color: #ff3b3b;
+    }
+
+    .popup-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .popup-btn + .popup-btn {
+      margin-top: 6px;
+    }
+
+    /* Tax Config */
+    .tax-config {
+      margin-top: 8px;
+    }
+
+    .tax-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .tax-row label {
+      font-size: 11px;
+      color: #8b949e;
+      white-space: nowrap;
+    }
+
+    .tax-row input {
+      width: 80px;
+      padding: 5px 8px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 2px;
+      color: #e6edf3;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      text-align: right;
+      outline: none;
+      transition: border-color 200ms ease;
+    }
+
+    .tax-row input:focus {
+      border-color: #00ff88;
+    }
+
+    .tax-row input::-webkit-outer-spin-button,
+    .tax-row input::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+    }
+
+    .popup-btn-small {
+      padding: 6px 10px;
+      font-size: 10px;
+      margin-top: 8px;
+    }
+
+    /* Footer */
+    .popup-footer {
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 10px;
+      color: #484f58;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Message */
+    .popup-message {
+      padding: 8px 12px;
+      margin-top: 8px;
+      border-radius: 2px;
+      font-size: 11px;
+      font-weight: 500;
+      display: none;
+    }
+
+    .popup-message.success {
+      display: block;
+      background: rgba(0, 255, 136, 0.1);
+      border: 1px solid rgba(0, 255, 136, 0.25);
+      color: #00ff88;
+    }
+
+    .popup-message.error {
+      display: block;
+      background: rgba(255, 59, 59, 0.1);
+      border: 1px solid rgba(255, 59, 59, 0.25);
+      color: #ff3b3b;
+    }
+
+    /* Loading */
+    .loading-spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #30363d;
+      border-top-color: #00ff88;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ========== GARIMPO ========== */
+    .garimpo-container {
+      max-height: 280px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #30363d #0d1117;
+    }
+
+    .garimpo-container::-webkit-scrollbar {
+      width: 4px;
+    }
+    .garimpo-container::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    .garimpo-container::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 2px;
+    }
+
+    .garimpo-empty {
+      text-align: center;
+      padding: 20px 10px;
+      color: #484f58;
+      font-size: 11px;
+    }
+    .garimpo-empty .garimpo-empty-icon {
+      font-size: 24px;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .garimpo-count {
+      font-size: 10px;
+      color: #484f58;
+      font-family: 'JetBrains Mono', monospace;
+      float: right;
+      margin-top: -18px;
+    }
+
+    .garimpo-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 10px;
+      border-bottom: 1px solid #21262d;
+      transition: background 150ms ease;
+    }
+    .garimpo-item:hover {
+      background: rgba(0, 255, 136, 0.03);
+    }
+
+    .garimpo-item-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .garimpo-item-title {
+      font-size: 11px;
+      font-weight: 500;
+      color: #e6edf3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 300px;
+      cursor: pointer;
+    }
+    .garimpo-item-title:hover {
+      color: #00ff88;
+      text-decoration: underline;
+    }
+
+    .garimpo-item-meta {
+      display: flex;
+      gap: 8px;
+      margin-top: 3px;
+      flex-wrap: wrap;
+    }
+
+    .garimpo-item-meta span {
+      font-size: 9px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #8b949e;
+    }
+
+    .garimpo-platform {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 2px;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .garimpo-platform.meli {
+      background: rgba(255, 230, 0, 0.12);
+      color: #f0b429;
+      border: 1px solid rgba(240, 180, 41, 0.3);
+    }
+    .garimpo-platform.shopee {
+      background: rgba(238, 77, 45, 0.12);
+      color: #ee4d2d;
+      border: 1px solid rgba(238, 77, 45, 0.3);
+    }
+
+    .garimpo-delete {
+      background: none;
+      border: none;
+      color: #484f58;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 2px 4px;
+      border-radius: 2px;
+      transition: all 150ms ease;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .garimpo-delete:hover {
+      color: #ff3b3b;
+      background: rgba(255, 59, 59, 0.1);
+    }
+
+    .garimpo-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .garimpo-actions .popup-btn {
+      flex: 1;
+    }
+
+    /* ========== TABS SYSTEM ========== */
+    .popup-tabs {
+      display: flex;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 0 4px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px 6px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #8b949e;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-family: 'Inter', sans-serif;
+      transition: all 150ms ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .tab-btn:hover {
+      color: #e6edf3;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .tab-btn.active {
+      color: #00ff88;
+      border-bottom-color: #00ff88;
+      background: rgba(0, 255, 136, 0.03);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* ========== TOOLS SECTION ========== */
+    .tools-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .tools-card-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #8b949e;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .tools-form-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .tools-input {
+      flex: 1;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 2px;
+      color: #e6edf3;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 150ms ease;
+    }
+
+    .tools-input:focus {
+      border-color: #00ff88;
+    }
+
+    .tools-select {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 2px;
+      color: #e6edf3;
+      padding: 8px;
+      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* Platform Button Toggles */
+    .platform-btn-group {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .platform-toggle-btn {
+      flex: 1;
+      padding: 6px 10px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 2px;
+      color: #8b949e;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 150ms ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .platform-toggle-btn:hover {
+      color: #e6edf3;
+      border-color: #8b949e;
+    }
+
+    .platform-toggle-btn.active[data-platform="ml"] {
+      background: rgba(255, 230, 0, 0.1);
+      color: #f0b429;
+      border-color: rgba(240, 180, 41, 0.5);
+    }
+
+    .platform-toggle-btn.active[data-platform="shopee"] {
+      background: rgba(238, 77, 45, 0.1);
+      color: #ee4d2d;
+      border-color: rgba(238, 77, 45, 0.5);
+    }
+
+    /* Lists inside Tools */
+    .tools-list {
+      max-height: 200px;
+      overflow-y: auto;
+      border-radius: 2px;
+      background: #0d1117;
+      border: 1px solid #21262d;
+      margin-top: 8px;
+      scrollbar-width: thin;
+      scrollbar-color: #30363d #0d1117;
+    }
+
+    .tools-list::-webkit-scrollbar {
+      width: 4px;
+    }
+    .tools-list::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    .tools-list::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 2px;
+    }
+
+    .tools-list-empty {
+      padding: 16px;
+      text-align: center;
+      color: #484f58;
+      font-size: 11px;
+    }
+
+    .ean-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .ean-list-item:last-child {
+      border-bottom: none;
+    }
+
+    .ean-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #00ff88;
+      letter-spacing: 0.5px;
+    }
+
+    .item-action-btn {
+      background: transparent;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      padding: 4px 8px;
+      border-radius: 2px;
+      font-size: 10px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 150ms ease;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .item-action-btn:hover {
+      color: #e6edf3;
+      border-color: #8b949e;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .item-action-btn.btn-success:hover {
+      color: #00ff88;
+      border-color: rgba(0, 255, 136, 0.3);
+      background: rgba(0, 255, 136, 0.05);
+    }
+
+    /* Keyword List Item */
+    .keyword-list-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      border-bottom: 1px solid #21262d;
+    }
+
+    .keyword-list-item:last-child {
+      border-bottom: none;
+    }
+
+    .keyword-text {
+      font-size: 11px;
+      color: #e6edf3;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+
+    .keyword-actions {
+      display: flex;
+      gap: 4px;
+    }
+  </style>
 </head>
 <body>
-    <h3>Analisador ML</h3>
-    <button id="loginButton">Login com Mercado Livre</button>
-    <script src="popup.js"></script>
+  <div class="popup-header">
+    <h1>📊 ANALISADOR PRO</h1>
+    <span class="version">v7.4</span>
+  </div>
+
+  <!-- Tabs Navigation -->
+  <div class="popup-tabs">
+    <button class="tab-btn active" data-tab="garimpo">⭐ Garimpo</button>
+    <button class="tab-btn" data-tab="tools">🛠️ Ferramentas</button>
+    <button class="tab-btn" data-tab="taxes">⚙️ Ajustes</button>
+  </div>
+
+  <div class="popup-message" id="popupMessage"></div>
+
+  <!-- TAB: GARIMPO -->
+  <div id="tab-content-garimpo" class="tab-content active">
+    <div class="popup-section">
+      <div class="popup-section-title">⭐ Produtos Salvos</div>
+      <span class="garimpo-count" id="garimpoCount"></span>
+      <div class="garimpo-container" id="garimpoContainer">
+        <div class="garimpo-empty" id="garimpoEmpty">
+          <span class="garimpo-empty-icon">📭</span>
+          Nenhum produto salvo.<br>Use o botão ⭐ Garimpo no HUD.
+        </div>
+      </div>
+      <div class="garimpo-actions" id="garimpoActions" style="display:none;">
+        <button class="popup-btn popup-btn-primary popup-btn-small" id="exportCsvBtn">📥 EXPORTAR CSV</button>
+        <button class="popup-btn popup-btn-danger popup-btn-small" id="clearGarimpoBtn">🗑️ LIMPAR TUDO</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: FERRAMENTAS -->
+  <div id="tab-content-tools" class="tab-content">
+    <div class="popup-section">
+      <!-- EAN Generator -->
+      <div class="tools-card">
+        <div class="tools-card-title">📦 Gerador EAN-13</div>
+        <div class="tools-form-row">
+          <select class="tools-select" id="eanQtySelect">
+            <option value="1">1 EAN</option>
+            <option value="5">5 EANs</option>
+            <option value="10">10 EANs</option>
+            <option value="50">50 EANs</option>
+          </select>
+          <button class="popup-btn popup-btn-primary" id="generateEanBtn" style="margin:0; flex:1;">▶ GERAR CÓDIGOS</button>
+        </div>
+        <div class="tools-list" id="eanResultsList">
+          <div class="tools-list-empty">Nenhum EAN gerado ainda.</div>
+        </div>
+        <button class="popup-btn popup-btn-primary popup-btn-small" id="copyAllEanBtn" style="display:none; margin-top:8px;">📋 COPIAR TODOS OS EANS</button>
+      </div>
+
+      <!-- SEO Keywords -->
+      <div class="tools-card" style="margin-bottom: 0;">
+        <div class="tools-card-title">🔍 SEO Palavras-chave</div>
+        <div class="platform-btn-group">
+          <button class="platform-toggle-btn active" data-platform="ml">MERCADO LIVRE</button>
+          <button class="platform-toggle-btn" data-platform="shopee">SHOPEE</button>
+        </div>
+        <div class="tools-form-row">
+          <input type="text" class="tools-input" id="seoQueryInput" placeholder="Digite uma palavra (ex: garrafa)...">
+        </div>
+        <div class="tools-list" id="seoResultsList">
+          <div class="tools-list-empty">Digite algo para ver sugestões.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: AJUSTES / TAXAS -->
+  <div id="tab-content-taxes" class="tab-content">
+    <!-- Auth Status -->
+    <div class="popup-section">
+      <div class="popup-section-title">Autenticação</div>
+      <div class="auth-status" id="authStatusBox">
+        <div class="auth-dot offline" id="authDot"></div>
+        <div class="auth-info">
+          <span class="auth-label" id="authLabel">Verificando...</span>
+          <span class="auth-detail" id="authDetail"></span>
+        </div>
+      </div>
+      <div style="margin-top: 10px;">
+        <button class="popup-btn popup-btn-primary" id="loginButton" style="display:none;">▶ LOGIN COM MERCADO LIVRE</button>
+        <button class="popup-btn popup-btn-danger" id="logoutButton" style="display:none;">⏹ DESCONECTAR</button>
+      </div>
+    </div>
+
+    <!-- Tax Config ML -->
+    <div class="popup-section">
+      <div class="popup-section-title">🛒 Taxas Mercado Livre</div>
+      <div class="tax-config">
+        <div class="tax-row">
+          <label>Taxa Clássico (%)</label>
+          <input type="number" id="taxClassico" value="13" step="0.1">
+        </div>
+        <div class="tax-row">
+          <label>Taxa Premium (%)</label>
+          <input type="number" id="taxPremium" value="18" step="0.1">
+        </div>
+        <div class="tax-row">
+          <label>Custo Fixo (R$)</label>
+          <input type="number" id="taxCustoFixo" value="6.00" step="0.01">
+        </div>
+        <div class="tax-row">
+          <label>Limite Custo Fixo (R$)</label>
+          <input type="number" id="taxLimiteCusto" value="79.00" step="0.01">
+        </div>
+        <button class="popup-btn popup-btn-primary popup-btn-small" id="saveTaxesBtn">💾 SALVAR TAXAS</button>
+        <button class="popup-btn popup-btn-small" id="resetTaxesBtn" style="border-color: #484f58; color: #8b949e; background: transparent;">↩ RESTAURAR PADRÃO</button>
+      </div>
+    </div>
+
+    <!-- Shopee Tax Config -->
+    <div class="popup-section">
+      <div class="popup-section-title">🏪 Taxas Shopee</div>
+      <div class="tax-config">
+        <div class="tax-row">
+          <label>Comissão (%)</label>
+          <input type="number" id="shopeeComissao" value="14" step="0.1">
+        </div>
+        <div class="tax-row">
+          <label>Taxa Fixa (R$)</label>
+          <input type="number" id="shopeeTaxaFixa" value="3.00" step="0.01">
+        </div>
+        <button class="popup-btn popup-btn-primary popup-btn-small" id="saveShopeeBtn">💾 SALVAR TAXAS SHOPEE</button>
+        <button class="popup-btn popup-btn-small" id="resetShopeeBtn" style="border-color: #484f58; color: #8b949e; background: transparent;">↩ RESTAURAR PADRÃO</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="popup-footer">
+    Analisador Pro — ML + Shopee — Uso pessoal
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>

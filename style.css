@@ -1,143 +1,640 @@
-/* Estilo para o botão de análise */
+/* =================================================================
+   ANALISADOR DE PRODUTOS ML v7.0 — "Dark Commerce HUD"
+   Tema escuro profissional para análise financeira
+   ================================================================= */
+
+/* --- Google Fonts Import --- */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* --- Design Tokens --- */
+:root {
+  --hud-bg-primary: #0d1117;
+  --hud-bg-secondary: #161b22;
+  --hud-bg-tertiary: #1c2128;
+  --hud-bg-input: #0d1117;
+  --hud-border: #30363d;
+  --hud-border-focus: #00ff88;
+  --hud-text-primary: #e6edf3;
+  --hud-text-secondary: #8b949e;
+  --hud-text-muted: #484f58;
+  --hud-accent-green: #00ff88;
+  --hud-accent-green-dim: #00cc6a;
+  --hud-accent-red: #ff3b3b;
+  --hud-accent-red-dim: #da3633;
+  --hud-accent-amber: #f0b429;
+  --hud-accent-amber-dim: #d29922;
+  --hud-accent-blue: #58a6ff;
+  --hud-font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --hud-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --hud-radius: 2px;
+  --hud-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --hud-transition: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* --- Animações (GPU-accelerated) --- */
+@keyframes hudSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes hudFadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes hudPulseGlow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 255, 136, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(0, 255, 136, 0.6); }
+}
+
+@keyframes hudScoreBar {
+  from { width: 0; }
+}
+
+/* Respeitar preferência do usuário */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =================================================================
+   BOTÃO DE ANÁLISE
+   ================================================================= */
+
 .meu-botao-analise {
-  position: fixed; /* Essencial para poder mover */
+  position: fixed;
   top: 100px;
   right: 20px;
-  background-color: #3483fa;
-  color: white;
-  padding: 12px 20px;
-  border: none;
-  border-radius: 6px;
-  font-size: 16px;
-  cursor: grab; /* Mãozinha para indicar que é móvel */
+  background: var(--hud-bg-secondary);
+  color: var(--hud-accent-green);
+  padding: 10px 18px;
+  border: 1px solid var(--hud-accent-green-dim);
+  border-radius: var(--hud-radius);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  cursor: grab;
   z-index: 9999;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  user-select: none; /* Impede a seleção de texto ao arrastar */
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.15);
+  user-select: none;
+  transition: box-shadow var(--hud-transition), border-color var(--hud-transition), transform var(--hud-transition);
+  animation: hudFadeIn 0.4s ease-out;
+  will-change: transform;
+}
+
+.meu-botao-analise:hover {
+  box-shadow: 0 0 24px rgba(0, 255, 136, 0.4);
+  border-color: var(--hud-accent-green);
+  transform: scale(1.03);
 }
 
 .meu-botao-analise:active {
-  cursor: grabbing; /* Mãozinha fechada ao arrastar */
+  cursor: grabbing;
+  transform: scale(0.98);
 }
 
-/* Estilo para o painel de resultados */
+/* =================================================================
+   PAINEL PRINCIPAL
+   ================================================================= */
+
 #meu-painel-analise {
   position: fixed;
   top: 160px;
   right: 20px;
-  width: 320px; /* Tamanho inicial */
-  min-width: 300px; /* Largura mínima */
-  height: 450px; /* Altura inicial */
-  min-height: 300px; /* Altura mínima */
-  background-color: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  width: 360px;
+  min-width: 320px;
+  max-height: 85vh;
+  background: var(--hud-bg-primary);
+  border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius);
+  box-shadow: var(--hud-shadow);
   z-index: 9998;
-  font-family: Arial, sans-serif;
-  color: #333;
-  display: flex; /* Usando flexbox para organizar o conteúdo */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--hud-text-primary);
+  display: flex;
   flex-direction: column;
-
-  /* A MÁGICA DO REDIMENSIONAMENTO! */
-  resize: both;
-  overflow: auto; /* Necessário para que o 'resize' funcione */
-  cursor: grab; /* Também será móvel */
-  user-select: none; /* Impede seleção de texto */
+  overflow: hidden;
+  animation: hudSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
 }
 
-#meu-painel-analise:active {
+/* --- Header do Painel --- */
+#meu-painel-analise .hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--hud-bg-secondary);
+  border-bottom: 1px solid var(--hud-border);
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+#meu-painel-analise .hud-header:active {
   cursor: grabbing;
 }
 
-#meu-painel-analise h3 {
-  margin-top: 0;
-  padding: 15px 20px;
-  color: #3483fa;
-  border-bottom: 2px solid #f5f5f5;
-  flex-shrink: 0; /* Impede que o header encolha */
+#meu-painel-analise .hud-header h3 {
+  margin: 0;
+  padding: 0;
+  color: var(--hud-accent-green);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-/* Conteúdo que pode rolar */
-.painel-content {
-  padding: 0 20px 20px 20px;
-  overflow-y: auto; /* Permite scroll se o conteúdo for maior que o painel */
+#meu-painel-analise .hud-close-btn {
+  background: none;
+  border: 1px solid var(--hud-border);
+  color: var(--hud-text-secondary);
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: var(--hud-radius);
+  font-size: 16px;
+  line-height: 1;
+  transition: all var(--hud-transition);
 }
 
-/* --- ESTILOS ANTERIORES (com pequenos ajustes) --- */
-#meu-painel-analise .section {
-  border-bottom: 1px solid #eee;
-  padding-bottom: 10px;
-  margin-bottom: 10px;
+#meu-painel-analise .hud-close-btn:hover {
+  color: var(--hud-accent-red);
+  border-color: var(--hud-accent-red);
+  background: rgba(255, 59, 59, 0.1);
 }
-#meu-painel-analise .section:last-child {
+
+/* --- Conteúdo Scrollável --- */
+#meu-painel-analise .painel-content {
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hud-border) transparent;
+}
+
+#meu-painel-analise .painel-content::-webkit-scrollbar {
+  width: 4px;
+}
+
+#meu-painel-analise .painel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#meu-painel-analise .painel-content::-webkit-scrollbar-thumb {
+  background: var(--hud-border);
+  border-radius: 2px;
+}
+
+/* =================================================================
+   SCORE DE LUCRATIVIDADE
+   ================================================================= */
+
+#meu-painel-analise .hud-score-section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hud-border);
+}
+
+#meu-painel-analise .hud-score-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--hud-text-secondary);
+  margin-bottom: 8px;
+}
+
+#meu-painel-analise .hud-score-bar-container {
+  width: 100%;
+  height: 6px;
+  background: var(--hud-bg-tertiary);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+
+#meu-painel-analise .hud-score-bar {
+  height: 100%;
+  border-radius: 1px;
+  transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.3s ease;
+  animation: hudScoreBar 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#meu-painel-analise .hud-score-bar.score-red { background: var(--hud-accent-red); }
+#meu-painel-analise .hud-score-bar.score-amber { background: var(--hud-accent-amber); }
+#meu-painel-analise .hud-score-bar.score-green { background: var(--hud-accent-green); }
+
+#meu-painel-analise .hud-score-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+#meu-painel-analise .hud-score-value.score-red { color: var(--hud-accent-red); }
+#meu-painel-analise .hud-score-value.score-amber { color: var(--hud-accent-amber); }
+#meu-painel-analise .hud-score-value.score-green { color: var(--hud-accent-green); }
+
+/* =================================================================
+   SEÇÕES COLAPSÁVEIS
+   ================================================================= */
+
+#meu-painel-analise .hud-section {
+  border-bottom: 1px solid var(--hud-border);
+}
+
+#meu-painel-analise .hud-section:last-child {
   border-bottom: none;
-  margin-bottom: 0;
+}
+
+#meu-painel-analise .hud-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--hud-bg-secondary);
+  cursor: pointer;
+  transition: background var(--hud-transition);
+  user-select: none;
+}
+
+#meu-painel-analise .hud-section-header:hover {
+  background: var(--hud-bg-tertiary);
+}
+
+#meu-painel-analise .hud-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--hud-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#meu-painel-analise .hud-section-arrow {
+  color: var(--hud-text-muted);
+  font-size: 12px;
+  transition: transform var(--hud-transition);
+}
+
+#meu-painel-analise .hud-section.collapsed .hud-section-arrow {
+  transform: rotate(-90deg);
+}
+
+#meu-painel-analise .hud-section-body {
+  padding: 12px 16px;
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease, padding 0.25s ease;
+  max-height: 600px;
+  opacity: 1;
+}
+
+#meu-painel-analise .hud-section.collapsed .hud-section-body {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
   padding-bottom: 0;
 }
-#meu-painel-analise .price {
-  color: #00a650;
-  font-weight: bold;
-  font-size: 1.1em;
-}
-#meu-painel-analise a {
-  color: #3483fa;
-  text-decoration: none;
-}
-#meu-painel-analise a:hover {
-  text-decoration: underline;
-}
-#meu-painel-analise .highlight {
-  font-weight: bold;
-  background-color: #f1c40f;
-  padding: 2px 5px;
-  border-radius: 4px;
-  color: #333;
-}
-#meu-painel-analise .prejuizo {
-  color: #e74c3c !important;
-}
-#meu-painel-analise .lucro {
-  color: #2ecc71;
-}
-#meu-painel-analise .calculator {
-  background-color: #f9f9f9;
-  padding: 15px;
-  margin: 15px 0 0 0;
-  border-top: 1px solid #eee;
-  border-radius: 4px;
-}
-#meu-painel-analise h4 {
-  margin-top: 0;
-  margin-bottom: 15px;
-  text-align: center;
-  color: #555;
-}
-#meu-painel-analise .input-group {
+
+/* =================================================================
+   DADOS DO PRODUTO
+   ================================================================= */
+
+#meu-painel-analise .hud-data-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  padding: 5px 0;
 }
-#meu-painel-analise label {
-  font-size: 14px;
-  color: #333;
+
+#meu-painel-analise .hud-data-label {
+  font-size: 12px;
+  color: var(--hud-text-secondary);
 }
+
+#meu-painel-analise .hud-data-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hud-text-primary);
+}
+
+#meu-painel-analise .hud-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--hud-radius);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+#meu-painel-analise .hud-tag-premium {
+  background: rgba(240, 180, 41, 0.15);
+  color: var(--hud-accent-amber);
+  border: 1px solid rgba(240, 180, 41, 0.3);
+}
+
+#meu-painel-analise .hud-tag-classico {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--hud-accent-blue);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+#meu-painel-analise .hud-tag-frete-gratis {
+  background: rgba(0, 255, 136, 0.1);
+  color: var(--hud-accent-green);
+  border: 1px solid rgba(0, 255, 136, 0.25);
+}
+
+#meu-painel-analise .hud-currency {
+  color: var(--hud-accent-green);
+}
+
+#meu-painel-analise .hud-currency.negative {
+  color: var(--hud-accent-red);
+}
+
+/* =================================================================
+   CALCULADORA
+   ================================================================= */
+
+#meu-painel-analise .hud-calc-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#meu-painel-analise .hud-input-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#meu-painel-analise .hud-input-group label {
+  font-size: 12px;
+  color: var(--hud-text-secondary);
+  white-space: nowrap;
+}
+
 #meu-painel-analise input[type="number"] {
   width: 120px;
-  padding: 5px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
+  padding: 6px 10px;
+  background: var(--hud-bg-input);
+  border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius);
+  color: var(--hud-text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
   text-align: right;
+  outline: none;
+  transition: border-color var(--hud-transition), box-shadow var(--hud-transition);
 }
-#meu-painel-analise #results {
-  margin-top: 15px;
-  padding-top: 10px;
-  border-top: 1px dashed #ccc;
+
+#meu-painel-analise input[type="number"]:focus {
+  border-color: var(--hud-accent-green);
+  box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.15);
 }
-#meu-painel-analise #results p {
+
+#meu-painel-analise input[type="number"]::placeholder {
+  color: var(--hud-text-muted);
+  font-size: 11px;
+}
+
+/* Remover setas do input number */
+#meu-painel-analise input[type="number"]::-webkit-outer-spin-button,
+#meu-painel-analise input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* --- Resultados da Calculadora --- */
+#meu-painel-analise .hud-results {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hud-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#meu-painel-analise .hud-result-row {
   display: flex;
   justify-content: space-between;
-  margin: 8px 0;
-  font-size: 15px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+#meu-painel-analise .hud-result-row.hud-result-highlight {
+  padding: 8px 10px;
+  margin: 4px -10px;
+  border-radius: var(--hud-radius);
+}
+
+#meu-painel-analise .hud-result-highlight.lucro-positivo {
+  background: rgba(0, 255, 136, 0.08);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+#meu-painel-analise .hud-result-highlight.lucro-negativo {
+  background: rgba(255, 59, 59, 0.08);
+  border: 1px solid rgba(255, 59, 59, 0.2);
+}
+
+#meu-painel-analise .hud-result-label {
+  font-size: 12px;
+  color: var(--hud-text-secondary);
+}
+
+#meu-painel-analise .hud-result-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* =================================================================
+   BARRA DE AÇÕES (Footer)
+   ================================================================= */
+
+#meu-painel-analise .hud-actions {
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px;
+  background: var(--hud-bg-secondary);
+  border-top: 1px solid var(--hud-border);
+  flex-shrink: 0;
+}
+
+#meu-painel-analise .hud-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 7px 10px;
+  background: var(--hud-bg-tertiary);
+  border: 1px solid var(--hud-border);
+  border-radius: var(--hud-radius);
+  color: var(--hud-text-secondary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--hud-transition);
+}
+
+#meu-painel-analise .hud-action-btn:hover {
+  color: var(--hud-text-primary);
+  border-color: var(--hud-accent-green-dim);
+  background: rgba(0, 255, 136, 0.05);
+}
+
+#meu-painel-analise .hud-action-btn.copied {
+  color: var(--hud-accent-green);
+  border-color: var(--hud-accent-green);
+}
+
+/* =================================================================
+   TOOLTIP DE FEEDBACK
+   ================================================================= */
+
+#meu-painel-analise .hud-toast {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--hud-accent-green);
+  color: var(--hud-bg-primary);
+  padding: 6px 14px;
+  border-radius: var(--hud-radius);
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 10;
+}
+
+#meu-painel-analise .hud-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* =================================================================
+   BADGES DE BUSCA — Métricas injetadas nos resultados de pesquisa
+   ================================================================= */
+
+@keyframes searchBadgeFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ml-search-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--hud-bg-primary, #0d1117);
+  border: 1px solid var(--hud-border, #30363d);
+  border-radius: 2px;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 11px;
+  line-height: 1;
+  animation: searchBadgeFadeIn 0.35s ease-out;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
+}
+
+.ml-search-badge__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8b949e;
+  white-space: nowrap;
+}
+
+.ml-search-badge__item--vendas .ml-search-badge__value {
+  color: #58a6ff;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  font-weight: 600;
+}
+
+.ml-search-badge__item--faturamento .ml-search-badge__value {
+  color: #00ff88;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  font-weight: 600;
+}
+
+.ml-search-badge__item--seller .ml-search-badge__value {
+  color: #f0b429;
+}
+
+.ml-search-badge__separator {
+  width: 1px;
+  height: 12px;
+  background: #30363d;
+  flex-shrink: 0;
+}
+
+.ml-search-badge__icon {
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Hover state — subtle glow on the card border */
+.ml-search-badge:hover {
+  border-color: rgba(0, 255, 136, 0.35);
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.08);
+}
+
+/* Tag for Full Catalog or Fulfilled */
+.ml-search-badge__tag {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.ml-search-badge__tag--full {
+  background: rgba(0, 255, 136, 0.12);
+  color: #00ff88;
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+.ml-search-badge__tag--premium {
+  background: rgba(240, 180, 41, 0.12);
+  color: #f0b429;
+  border: 1px solid rgba(240, 180, 41, 0.2);
+}
+
+.ml-search-badge__tag--frete {
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+  border: 1px solid rgba(88, 166, 255, 0.2);
 }

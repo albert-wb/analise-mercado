@@ -1,30 +1,37 @@
 {
   "manifest_version": 3,
   "name": "Meu Analisador de Produtos (com API)",
-  "version": "6.1",
-  "description": "Uma extensão para analisar dados de produtos para uso pessoal, com integração API.",
+  "version": "7.4",
+  "description": "Extensão profissional para análise de viabilidade e lucratividade de produtos no Mercado Livre e Shopee. Garimpo local, métricas em buscas, calculadora financeira, OAuth2, ferramentas EAN e SEO.",
   "permissions": [
     "activeTab",
     "scripting",
     "storage",
-    "identity"
+    "identity",
+    "alarms"
   ],
   "host_permissions": [
     "*://*.mercadolivre.com.br/*",
-    "https://api.mercadolibre.com/*"
+    "https://api.mercadolibre.com/*",
+    "*://*.shopee.com.br/*",
+    "*://*.mlstatic.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Analisador de Produtos"
+    "default_title": "Analisador de Produtos ML + Shopee"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.mercadolivre.com.br/*"],
+      "matches": [
+        "*://*.mercadolivre.com.br/*",
+        "*://*.shopee.com.br/*"
+      ],
       "js": ["content.js"],
-      "css": ["style.css"]
+      "css": ["style.css"],
+      "run_at": "document_idle"
     }
   ]
 }

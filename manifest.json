@@ -31,9 +31,16 @@
         "*://*.mercadolivre.com.br/*",
         "*://*.shopee.com.br/*"
       ],
-      "js": ["content.js"],
-      "css": ["style.css"],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "style.css"
+      ],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self';"
+  }
 }

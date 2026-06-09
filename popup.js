@@ -1,3 +1,20 @@
+
+// ==================================================================
+//  SECURITY: SANITIZATION
+// ==================================================================
+const escapeHTML = (str) => {
+  if (str == null) return '';
+  return String(str).replace(/[&<>'"]/g, 
+    tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag)
+  );
+};
+
 // popup.js — Analisador de Produtos v7.3 (ML + Shopee + Garimpo)
 
 const DEFAULT_TAXES = {

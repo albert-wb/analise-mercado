@@ -34,6 +34,23 @@ function detectPlatform() {
 
 const CURRENT_PLATFORM = detectPlatform();
 
+// ==================================================================
+//  SECURITY: SANITIZATION
+// ==================================================================
+const escapeHTML = (str) => {
+  if (str == null) return '';
+  return String(str).replace(/[&<>'"]/g, 
+    tag => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag)
+  );
+};
+
+
 // Load custom taxes from storage
 chrome.runtime.sendMessage({ type: 'getCustomTaxes' }, (response) => {
   if (chrome.runtime.lastError) return;
@@ -351,7 +368,7 @@ function exibirPainel() {
         <div class="hud-section-body">
           <div class="hud-data-row">
             <span class="hud-data-label">EAN</span>
-            <span class="hud-data-value">${dadosProduto.ean || 'N/A'}</span>
+            <span class="hud-data-value">${escapeHTML(dadosProduto.ean) || 'N/A'}</span>
           </div>
           <div class="hud-data-row">
             <span class="hud-data-label">Tipo de Anúncio</span>
@@ -683,8 +700,8 @@ function copiarDados() {
   const margem = precoVenda > 0 ? ((lucro / precoVenda) * 100).toFixed(2) : '0.00';
 
   const texto = [
-    `Produto: ${dadosProduto.titulo || 'N/A'}`,
-    `EAN: ${dadosProduto.ean || 'N/A'}`,
+    `Produto: ${escapeHTML(dadosProduto.titulo) || 'N/A'}`,
+    `EAN: ${escapeHTML(dadosProduto.ean) || 'N/A'}`,
     `Tipo: ${dadosProduto.tipoAnuncio || 'N/A'}`,
     `Frete Grátis: ${dadosProduto.freteGratis ? 'Sim' : 'Não'}`,
     `Preço: ${formatCurrency(precoVenda)}`,
@@ -1304,7 +1321,7 @@ function exibirPainelShopee() {
             <span class="hud-data-label">Volume Bruto</span>
             <span class="hud-data-value hud-currency">${formatCurrency(dadosProduto.volumeBruto)}</span>
           </div>
-          ${dadosProduto.sellerNick ? `<div class="hud-data-row"><span class="hud-data-label">Vendedor</span><span class="hud-data-value">${dadosProduto.sellerNick}</span></div>` : ''}
+          ${dadosProduto.sellerNick ? `<div class="hud-data-row"><span class="hud-data-label">Vendedor</span><span class="hud-data-value">${escapeHTML(dadosProduto.sellerNick)}</span></div>` : ''}
         </div>
       </div>
 

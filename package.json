@@ -1,0 +1,15 @@
+{
+  "name": "analisador-pro",
+  "version": "8.1.0",
+  "private": true,
+  "description": "Extensão Chrome MV3 de análise de produtos no Mercado Livre e Shopee.",
+  "type": "module",
+  "scripts": {
+    "test": "node tools/test.mjs",
+    "validate": "node tools/validate.mjs",
+    "check": "node tools/validate.mjs && node tools/test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

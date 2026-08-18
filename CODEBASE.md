@@ -1,108 +1,133 @@
-# Codebase: Meu Analisador de Produtos (com API)
+# Codebase: Analisador Pro — Mercado Livre & Shopee
 
-Este documento serve como a fonte única de verdade sobre a arquitetura, funcionalidades, fluxos e convenções do projeto. Ele foi projetado para que futuros agentes de IA compreendam o sistema instantaneamente sem a necessidade de reanalisar todo o código a cada interação.
+Este documento é a fonte única de verdade sobre a arquitetura, funcionalidades, fluxos e convenções do projeto. Ele existe para que qualquer agente ou desenvolvedor entenda o sistema sem reler todo o código.
 
 ---
 
 ## 🚨 REGRA DE OURO PARA ASSISTENTES DE IA
 > [!IMPORTANT]
-> **SEMPRE** que qualquer modificação for realizada no código deste repositório, o assistente de IA **DEVE** voltar a este arquivo ([CODEBASE.md](file:///d:/Projetos pessoais/analise-mercado/CODEBASE.md)) e atualizar a seção [Histórico de Alterações (Changelog)](#-histórico-de-alterações-changelog) no final do documento, descrevendo as mudanças efetuadas em formato de tabela/changelog de forma concisa e técnica.
+> **SEMPRE** que qualquer modificação for realizada no código deste repositório, o assistente de IA **DEVE** voltar a este arquivo e atualizar a seção [Histórico de Alterações (Changelog)](#-histórico-de-alterações-changelog) no final do documento, descrevendo as mudanças em formato de tabela de forma concisa e técnica.
+>
+> **REGRA COMPLEMENTAR (v8.0):** o changelog descreve o que foi *efetivamente escrito no código*. Entre as versões 7.8 e 7.11 foram registradas funções (`carregarAvaliacoes`, `carregarSEO`, `processarSnapshotsVendas`, `baixarMidiasML`) que nunca chegaram ao `content.js` — apenas as chamadas foram adicionadas. O resultado foi um `ReferenceError` em `extrairDados()` que deixou a extensão inteiramente inoperante por várias versões. **Antes de registrar qualquer mudança, rode `npm run check`.**
 
 ---
 
 ## 📋 Visão Geral do Projeto
 
-O **Meu Analisador de Produtos** é uma extensão do Google Chrome (desenvolvida sob a especificação Manifest V3) voltada para auxiliar na análise de viabilidade comercial e lucratividade de produtos anunciados na plataforma **Mercado Livre Brasil** (`mercadolivre.com.br`).
+O **Analisador Pro** é uma extensão do Chrome (Manifest V3) para análise de viabilidade comercial e lucratividade de produtos no **Mercado Livre Brasil** e na **Shopee Brasil**, no espírito das ferramentas AnálisePlace e Avantpro.
 
-### Principais Funcionalidades:
-1.  **Extração de Dados em Tempo Real:** Identifica e extrai metadados do anúncio em exibição (título, preço, estimativa de vendas históricas, tipo de anúncio - Clássico ou Premium, código EAN/GTIN, detecção de frete grátis, ID do produto e nickname do vendedor).
-2.  **Calculadora de Lucratividade:** Painel flutuante interativo "Dark Commerce HUD" com calculadora de lucro, margem e ROI, score visual de lucratividade com barra colorida, seções colapsáveis, e botão de copiar dados.
-3.  **Integração OAuth2 com a API do Mercado Livre:** Fluxo de login PKCE completo com renovação automática de tokens via `chrome.alarms`, status de autenticação em tempo real no popup, e função `fetchWithAuth` para chamadas autenticadas à API.
-4.  **Configuração de Taxas:** Popup com painel de configuração de taxas do Mercado Livre (Clássico, Premium, custo fixo, limite), com persistência via `chrome.storage.local`.
+### Principais funcionalidades
+
+1. **Raio-X do anúncio (HUD):** extração completa via API + DOM — produto, vendas, estoque, anúncio, vendedor, visitas, categoria, catálogo, avaliações, SEO e mídias.
+2. **Métricas no grid de busca:** badges por card com preço, vendas, faturamento, idade, estoque, tipo de anúncio, logística, catálogo e vendedor, com **detecção de monopólio de nicho**.
+3. **Calculadora de lucratividade:** usa a **comissão real da categoria** (API `listing_prices`), impostos configuráveis, ponto de equilíbrio e matriz de sensibilidade de preço.
+4. **Histórico próprio de vendas:** snapshots diários por anúncio (60 dias) que convertem a estimativa de vendas/30d em **medição real** após 3 dias de acompanhamento.
+5. **Garimpo + exportação CSV** de 32 colunas, **gerador de EAN-13** e **pesquisa de palavras-chave** pelos autocompletes reais das plataformas.
+6. **OAuth2 + PKCE** com o Mercado Livre, com renovação automática de token e suporte a credenciais próprias do usuário.
 
 ---
 
 ## 🛠️ Arquitetura de Arquivos
 
-O projeto é modularizado em arquivos de extensão tradicionais:
+| Arquivo | Responsabilidade |
+| :--- | :--- |
+| **manifest.json** | MV3 v8.0.0. Service worker como **módulo ES**. Permissões: `storage`, `identity`, `alarms`, `declarativeNetRequest`, `downloads` (`activeTab` e `scripting` foram removidas por não serem usadas). CSP explícita com `connect-src` restrito aos hosts realmente consultados. |
+| **background.js** | Service worker. OAuth2+PKCE, ciclo de vida dos tokens, **proxy das chamadas ao Mercado Livre**, cache em memória com TTL, camada de inteligência de produto (`analyzeMlItem`, `fetchItemsBatch`), snapshots, garimpo e downloads. Roteador de mensagens baseado em um mapa `handlers`. **Não consulta as APIs de produto da Shopee** — ver abaixo. |
+| **shopee-bridge.js** | Content script no **mundo MAIN**, em `document_start`. Embrulha `fetch`/`XMLHttpRequest` para observar as respostas que a própria Shopee busca e repassá-las ao content script. Não usa `chrome.*` (indisponível nesse contexto) e endereça o `postMessage` à origem da página. |
+| **content.js** | Extração DOM, HUD e badges de busca. **Toda a UI é montada com `createElement`/`textContent`** (helper `el()`); não há uma única escrita em `innerHTML`. |
+| **popup.html / popup.css / popup.js** | Garimpo, ferramentas (EAN, SEO) e ajustes (impostos, taxas, credenciais). CSS em arquivo próprio — a CSP `style-src 'self'` bloqueia `<style>` e `style="…"`. |
+| **style.css** | Tema "Dark Commerce HUD" injetado nas páginas. Sem `@import` remoto: a CSP das plataformas bloqueia o Google Fonts. |
+| **tools/validate.mjs** | Lint estrutural: manifesto, sintaxe, handlers de mensagem, ids do popup, ausência de `innerHTML`, cobertura da CSP. |
+| **tools/test.mjs** | Testes das funções puras avaliando o `content.js` publicado dentro de um `vm`. |
 
-*   **[manifest.json](file:///d:/Projetos pessoais/analise-mercado/manifest.json):** Manifesto Manifest V3 (versão `7.1`). Permissões: `activeTab`, `scripting`, `storage`, `identity`, `alarms`. Hosts: `mercadolivre.com.br` e `api.mercadolibre.com`.
-*   **[background.js](file:///d:/Projetos pessoais/analise-mercado/background.js):** Service worker. Responsável por: fluxo OAuth2 PKCE, gerenciamento de tokens (obtenção, renovação via refresh_token, expiração), função `fetchWithAuth()` para chamadas autenticadas, `getAuthStatus()` para estado de login, listeners de mensagens (`login`, `logout`, `getAuthStatus`, `getSellerData`, `saveCustomTaxes`, `getCustomTaxes`), e `chrome.alarms` para renovação automática.
-*   **[content.js](file:///d:/Projetos pessoais/analise-mercado/content.js):** Script injetado nas páginas do Mercado Livre. Em **páginas de produto**: extrai dados via JSON-LD e DOM, renderiza o painel "Dark Commerce HUD" com seções colapsáveis, calculadora de lucro/margem/ROI, score visual, botão de copiar e fechar. Em **páginas de busca**: detecta contexto automaticamente, injeta badges compactos (`.ml-search-badge`) nos cards de resultados com vendas estimadas, faturamento, tags de Frete Grátis e Full, utilizando MutationObserver para cards carregados dinamicamente. Suporta drag & drop com persistência de posição.
-*   **[style.css](file:///d:/Projetos pessoais/analise-mercado/style.css):** Tema "Dark Commerce HUD" — paleta escura profissional (`#0d1117`/`#161b22`), acentos em verde neon (`#00ff88`), vermelho (`#ff3b3b`) e âmbar (`#f0b429`). Tipografia JetBrains Mono para dados financeiros + Inter para texto. Animações GPU-accelerated com suporte a `prefers-reduced-motion`. Seções colapsáveis, scrollbar customizada, score bar animada, **badges de busca** (`.ml-search-badge`) com separadores, tags coloridas e hover glow.
-*   **[popup.html](file:///d:/Projetos pessoais/analise-mercado/popup.html):** Interface do popup com tema escuro consistente. Status de autenticação com indicador dot colorido, botões de login/logout com loading state, seção de configuração de taxas customizáveis, mensagens de feedback.
-*   **[popup.js](file:///d:/Projetos pessoais/analise-mercado/popup.js):** Lógica do popup. Verifica status de autenticação ao abrir, exibe tempo restante do token, gerencia login/logout via messaging, salva/carrega/restaura configuração de taxas customizáveis.
+### Regras estruturais (garantidas pelo `validate.mjs`)
 
----
+1. **O Mercado Livre é consultado pelo service worker**, que não sofre com o CORS da página hospedeira. Foi o que eliminou o `XMLHttpRequest` **síncrono** que a v7.6 usava dentro de `extrairDados()` e que travava a thread principal da página.
+2. **A Shopee é consultada pelo content script.** As APIs internas dela só respondem para requisições de mesma origem, com os cookies de sessão; do service worker a resposta é sempre `{"error":99999}`. Esse foi o motivo de a v8.0 não funcionar na Shopee. **Não mova essas chamadas para o background.**
+3. **Nenhuma string de terceiro vira HTML.** Elimina a classe de XSS que o `escapeHTML` da v7.12 tentava remediar e evita o bloqueio de `style="…"` inline pela CSP dos marketplaces.
+4. **O script do mundo MAIN não usa `chrome.*` e nunca faz `postMessage` para `'*'`.** Ele roda dentro da página de terceiro; o primeiro não existe nesse contexto e o segundo vazaria os dados para qualquer listener da página.
 
-## 🔐 Fluxo de Autenticação Detalhado (OAuth 2.0 + PKCE)
+### Cascata de dados da Shopee
 
-Para garantir segurança no fluxo de autorização sem depender de um servidor intermediário, a extensão adota a especificação **PKCE (Proof Key for Code Exchange)** no [background.js](file:///d:/Projetos pessoais/analise-mercado/background.js).
+| Ordem | Fonte | Observação |
+| :--- | :--- | :--- |
+| 1 | Ponte (mundo MAIN) | Sem requisição extra e sem anti-bot: são os dados que a própria página buscou. Buffer + replay cobrem o intervalo entre `document_start` e `document_idle`. |
+| 2 | `shopeeApi()` no content script | `fetch` de mesma origem com `credentials: 'include'`. |
+| 3 | DOM / JSON-LD | Último recurso; classes ofuscadas, então só texto e `ld+json`. |
 
-### Detalhamento Criptográfico e de Etapas:
-1.  **Disparo:** O script do popup ([popup.js](file:///d:/Projetos pessoais/analise-mercado/popup.js)) envia uma mensagem `{ type: 'login' }` para o service worker.
-2.  **Geração do Code Verifier:**
-    *   O service worker gera um segredo criptográfico aleatório chamado `codeVerifier` por meio de `crypto.getRandomValues(new Uint8Array(32))`.
-    *   Este segredo é codificado no formato Base64URL (removendo caracteres especiais de padding e substituindo `+` e `/` por `-` e `_`).
-    *   O `codeVerifier` é imediatamente gravado no `chrome.storage.local` sob a chave `'ml_code_verifier'`.
-3.  **Geração do Code Challenge:**
-    *   O `codeVerifier` é transformado em um buffer binário (`TextEncoder`).
-    *   É gerado um hash criptográfico SHA-256 do buffer por meio do método `crypto.subtle.digest('SHA-256', data)`.
-    *   O hash resultante é codificado no formato Base64URL, originando o `codeChallenge`.
-4.  **Solicitação de Autorização:**
-    *   É montada a URL para o endpoint de autorização oficial (`https://auth.mercadolivre.com.br/authorization`), passando como parâmetros de busca o `client_id`, a `redirect_uri` de retorno gerada pelo Chrome, o `code_challenge` e o método utilizado (`S256`).
-    *   A API `chrome.identity.launchWebAuthFlow` é chamada em modo interativo (`interactive: true`), exibindo a página de consentimento do Mercado Livre para o usuário final.
-5.  **Obtenção do Authorization Code:**
-    *   Quando a autorização é concedida, a plataforma redireciona o fluxo para a URI da extensão anexando o código temporário: `redirect_url?code=AUTH_CODE`.
-    *   O script extrai o parâmetro `code` da URL.
-6.  **Troca de Tokens (Access & Refresh):**
-    *   É efetuada uma chamada `POST` para `https://api.mercadolibre.com/oauth/token` com o cabeçalho `Content-Type: application/x-www-form-urlencoded`.
-    *   Os parâmetros enviados incluem o código de autorização (`code`), as credenciais `client_id` e `client_secret`, o redirecionamento original e, crucialmente, o parâmetro `code_verifier` original que foi recuperado do `chrome.storage.local`.
-    *   *Aviso de Segurança:* Embora o fluxo PKCE mitigue riscos no tráfego, as credenciais `CLIENT_ID` e `CLIENT_SECRET` constam expostas no código do script de segundo plano. Em ambiente de produção comercial, a etapa de requisição final do Token deve idealmente ser enviada a um servidor proxy backend seguro controlado pelo desenvolvedor para proteger o `CLIENT_SECRET` contra engenharia reversa do pacote da extensão.
-7.  **Armazenamento de Credenciais:**
-    *   Os tokens de acesso (`ml_access_token`), atualização (`ml_refresh_token`) e a expiração absoluta (`ml_token_expires`) são armazenados no `chrome.storage.local` para uso em chamadas de API subsequentes. O verifier temporário no storage é então excluído.
-8.  **Renovação Automática (v7.0):**
-    *   Após a obtenção dos tokens, um `chrome.alarms` é agendado para disparar 5 minutos antes da expiração, chamando `refreshAccessToken()` que usa o `ml_refresh_token` para obter um novo par de tokens.
-    *   Se a renovação falhar, os tokens são limpos e o usuário precisará re-autenticar.
+Semântica das vendas na Shopee: **`sold` = últimos 30 dias**, `historical_sold` = acumulado. Por isso, na Shopee, vendas/30d têm origem `plataforma` — não são estimadas.
 
 ---
 
-## 🧮 Lógica de Cálculo Financeiro (Tarifas do Mercado Livre)
+## 🔐 Fluxo de Autenticação (OAuth 2.0 + PKCE)
 
-A lógica de cálculo das taxas é executada no cliente ([content.js](file:///d:/Projetos pessoais/analise-mercado/content.js)) e suporta taxas customizáveis configuradas pelo popup:
+1. **Disparo:** `popup.js` envia `{ type: 'login' }`.
+2. **Code verifier:** 32 bytes de `crypto.getRandomValues`, em Base64URL, salvos em `ml_code_verifier`.
+3. **Code challenge:** SHA-256 do verifier (`crypto.subtle.digest`), em Base64URL.
+4. **`state` anti-CSRF (novo na v8.0):** valor aleatório enviado na autorização e **conferido no retorno**; divergência aborta o login.
+5. **Autorização:** `chrome.identity.launchWebAuthFlow` em `https://auth.mercadolivre.com.br/authorization`.
+6. **Troca de tokens:** `POST /oauth/token` com `code`, `client_id`, `client_secret`, `redirect_uri` e `code_verifier`.
+7. **Armazenamento:** `ml_access_token`, `ml_refresh_token` e `ml_token_expires` em `chrome.storage.local`; o verifier é descartado.
+8. **Renovação:** `chrome.alarms` dispara 5 minutos antes da expiração. `refreshAccessToken()` é **deduplicado** por uma promessa em voo, para que chamadas concorrentes não queimem o refresh token. `onStartup`/`onInstalled` reagendam o alarme.
+9. **Credenciais próprias:** `ml_oauth_config` tem prioridade sobre as embutidas. O `CLIENT_SECRET` **nunca** é devolvido ao popup.
 
-*   **Limite de Custo Fixo:** R$ 79,00 (padrão, configurável).
-*   **Custo Fixo por Venda:** R$ 6,00 (aplicado somente se o preço do produto for inferior ao limite — padrão, configurável).
-*   **Comissões do Canal:**
-    *   Anúncio **Clássico:** 13% do valor do produto (`0.13` — padrão, configurável).
-    *   Anúncio **Premium:** 18% do valor do produto (`0.18` — padrão, configurável).
-
-### Equações do Fluxo de Caixa:
-$$\text{Tarifa ML} = (\text{Preço do Produto} \times \text{Taxa do Tipo de Anúncio}) + \text{Custo Fixo (se aplicável)}$$
-$$\text{Valor Recebido} = \text{Preço do Produto} - \text{Tarifa ML} - \text{Custo do Frete}$$
-$$\text{Lucro Líquido} = \text{Valor Recebido} - \text{Custo do Produto}$$
-$$\text{Margem de Lucro \%} = \left( \frac{\text{Lucro Líquido}}{\text{Preço do Produto}} \right) \times 100$$
-$$\text{ROI \%} = \left( \frac{\text{Lucro Líquido}}{\text{Custo do Produto} + \text{Custo do Frete}} \right) \times 100$$
-
-### Score de Lucratividade Visual:
-| Margem       | Cor         | Classificação |
-| :----------- | :---------- | :------------ |
-| < 15%        | 🔴 Vermelho | Baixa         |
-| 15% — 30%   | 🟡 Âmbar    | Moderada      |
-| > 30%        | 🟢 Verde    | Saudável      |
+> **Risco residual conhecido:** um `CLIENT_SECRET` embutido em extensão é legível por qualquer usuário. Aceitável para uso pessoal; para distribuição pública, a emissão de token precisa ir para um backend proxy.
 
 ---
 
-## 📡 Mensageria Interna (chrome.runtime.sendMessage)
+## 🧮 Lógica de Cálculo Financeiro
 
-| Tipo de Mensagem    | Origem      | Destino       | Descrição                                      |
-| :------------------ | :---------- | :------------ | :--------------------------------------------- |
-| `login`             | popup.js    | background.js | Inicia fluxo OAuth2 PKCE                       |
-| `logout`            | popup.js    | background.js | Limpa todos os tokens do storage               |
-| `getAuthStatus`     | popup.js    | background.js | Retorna status de autenticação e tempo restante |
-| `getSellerData`     | content.js  | background.js | Busca dados do vendedor via API autenticada    |
-| `saveCustomTaxes`   | popup.js    | background.js | Salva configuração de taxas no storage         |
-| `getCustomTaxes`    | popup/content | background.js | Carrega taxas customizadas                     |
+A tarifa vem, em ordem de preferência:
+1. **API `/sites/MLB/listing_prices`** — comissão real da categoria e taxa fixa do tipo de anúncio;
+2. taxas configuradas no popup (`ml_custom_taxes` / `shopee_custom_taxes`);
+3. os padrões embutidos (ML 13%/18% + R$6 abaixo de R$79; Shopee 14% + R$3).
+
+### Equações
+
+$$\text{Tarifa} = (P \times \text{comissão}) + \text{taxa fixa (se } P < \text{limite)}$$
+$$\text{Extras} = (P \times \text{imposto \\%}) + \text{custo fixo global}$$
+$$\text{Valor Recebido} = P - \text{Tarifa} - \text{Custo do Frete}$$
+$$\text{Lucro} = \text{Valor Recebido} - \text{Custo do Produto} - \text{Extras}$$
+$$\text{Margem \\%} = \frac{\text{Lucro}}{P} \times 100 \qquad \text{ROI \\%} = \frac{\text{Lucro}}{\text{Custo do Produto}} \times 100$$
+$$P_{\text{equilíbrio}} = \frac{\text{Custo} + \text{Frete} + \text{taxa fixa} + \text{custo fixo global}}{1 - \text{comissão} - \text{imposto}}$$
+
+O ponto de equilíbrio é resolvido nas duas hipóteses da taxa fixa do ML (acima e abaixo do limite) e devolve a solução consistente. `tools/test.mjs` verifica a invariante: no preço devolvido, o lucro tem de ser zero.
+
+### Vendas em 30 dias
+
+| Origem | Como | Quando |
+| :--- | :--- | :--- |
+| `estimado` | vendas totais ÷ idade do anúncio × 30 | primeira visita |
+| `medido` | diferença entre o primeiro e o último snapshot ÷ dias | a partir de 3 dias de histórico |
+| `plataforma` | campo `sold` da API | apenas Shopee |
+
+---
+
+## 📡 Mensageria Interna (`chrome.runtime.sendMessage`)
+
+Todo handler devolve `{ success: true, ...payload }` ou `{ success: false, error }`. O `validate.mjs` falha se um `type` enviado não tiver handler correspondente.
+
+| Tipo | Origem | Descrição |
+| :--- | :--- | :--- |
+| `login` / `logout` / `getAuthStatus` | popup | Ciclo de autenticação |
+| `getRedirectUri` | popup | Redirect URI a cadastrar no painel do ML |
+| `getOAuthConfig` / `saveOAuthConfig` | popup | Credenciais próprias (o secret nunca sai do SW) |
+| `getCustomTaxes` / `saveCustomTaxes` | popup, content | Taxas do Mercado Livre |
+| `getShopeeCustomTaxes` / `saveShopeeCustomTaxes` | popup, content | Taxas da Shopee |
+| `getGlobalCosts` / `saveGlobalCosts` | popup, content | Impostos e custo fixo global |
+| `saveGarimpo` / `getGarimpoList` / `removeGarimpoItem` / `clearGarimpo` | popup, content | CRUD do garimpo |
+| **`analyzeMlItem`** | content | **Raio-X completo**: item, descrição, vendedor, nº de anúncios do vendedor, categoria, tarifas reais, reviews, visitas, ranking e catálogo — tudo em paralelo, cada bloco opcional |
+| `fetchMlCatalogProduct` | content | Resolve o anúncio vencedor de uma página `/p/MLB…` |
+| `fetchMlItemsBatch` | content | Multiget de até 20 itens + nicknames dos vendedores, para o grid de busca |
+| `fetchMlSuggestions` / `fetchShopeeSuggestions` | popup | Autocomplete real das plataformas (o do popup precisa passar pelo SW: a página do popup não é shopee.com.br) |
+| `saveSnapshot` | content | Grava a leitura do dia e devolve a série completa |
+| `downloadMedia` | content | Baixa as mídias para `analisador_pro/<produto>/` |
+
+### Chaves em `chrome.storage.local`
+
+`ml_access_token`, `ml_refresh_token`, `ml_token_expires`, `ml_code_verifier`, `ml_oauth_config`, `ml_custom_taxes`, `shopee_custom_taxes`, `global_costs`, `garimpo_items`, `snapshots`, `posicaoPainel`, `posicaoBotao`.
+
+> ⚠️ O `content.js` observa `chrome.storage.onChanged` com **exatamente** estes nomes. Até a v7.12 ele escutava `custom_taxes` enquanto o background gravava `ml_custom_taxes`, e a sincronização em tempo real nunca funcionou. `tools/test.mjs` cobre esse caminho.
 
 ---
 
@@ -112,6 +137,8 @@ Esta seção deve ser atualizada em formato de tabela/changelog de maneira crono
 
 | Versão / Data | Autor | Descrição das Modificações |
 | :--- | :--- | :--- |
+| **v8.1.0** (11/08/2026) | Claude (Opus 5) | **FIX + FEATURE — a Shopee volta a funcionar, com paridade wTool.** **🔴 Causa raiz:** todas as consultas à Shopee saíam do `background.js`. As APIs internas da Shopee (`/api/v4/...`) exigem **mesma origem + cookies de sessão**, e a requisição do service worker é cross-origin, sem cookies e ainda tinha o header `Origin` removido pela nossa própria regra de `declarativeNetRequest` — a resposta era sempre `{"error":99999}`. Só sobrava o scraping de DOM, com classes ofuscadas já obsoletas. **Correção estrutural:** as consultas à Shopee passaram para o content script, que compartilha a origem da página. Os handlers `analyzeShopeeItem`/`fetchShopeeItem`/`fetchShopeeReviews` foram removidos do background (ficou um comentário explicando por que não devem voltar); `fetchShopeeSuggestions` permanece, pois é chamado do popup. **Novo `shopee-bridge.js` (mundo MAIN, `document_start`):** embrulha `fetch`/`XMLHttpRequest` e **observa** — sem alterar argumentos, resposta ou timing, sempre sobre `response.clone()` — as respostas de `search_items`, `item/get`, `get_shop_base` e `get_ratings` que a própria Shopee busca, repassando ao content script via `postMessage` endereçado à origem. Como a ponte sobe antes do content script, mantém buffer de 60 capturas e reenvia mediante pedido de replay. **Cascata de dados:** ponte → `fetch` de mesma origem com cookies → DOM/JSON-LD. **Vendas reais de 30 dias:** o campo `sold` da Shopee é o volume dos últimos 30 dias (`historical_sold` é o total) — passa a alimentar vendas/30d, vendas/dia e faturamento sem estimativa. **Bug corrigido junto:** `calcularMetricasDerivadas` sobrescrevia esse número exato pela média de vida inteira do anúncio. **HUD da Shopee:** faixa de preço, desconto, curtidas, origem do envio, categoria, ficha técnica, nova seção **Variações** (preço/estoque/vendas por modelo, com destaque para variação sem estoque) e raio-X da loja concorrente (seguidores, nota, % positivo, taxa e tempo de resposta, cancelamento, nº de anúncios, loja oficial/verificada, data de abertura). **Grid de busca:** cards da Shopee localizados pelo link do produto (imune às classes ofuscadas) e preenchidos com dados reais da API — vendas/30d, faturamento, nota, estoque, localização, loja oficial — mais detecção de monopólio. **Nova barra flutuante** nas buscas (ML e Shopee) com contador e **exportação da página inteira de resultados em CSV**. **Correção de UX:** o badge cancela o clique, que antes abria o anúncio ao tentar ler a métrica. **Infra:** `validate.mjs` passou a derivar a lista de scripts do próprio manifesto e a exigir que scripts do mundo MAIN não usem `chrome.*`, não façam `postMessage` para `'*'` e rodem em `document_start`, e que o content script valide `event.origin`; testes foram de 61 para 112. |
+| **v8.0.0** (11/08/2026) | Claude (Opus 5) | **MAJOR — reescrita completa + correção de falha total.** **🔴 Bug crítico corrigido:** `content.js` chamava `processarSnapshotsVendas`, `carregarAvaliacoes`, `carregarSEO` e `baixarMidiasML`, que **nunca foram definidas** (as v7.8–v7.11 registraram no changelog funções que não foram escritas). Como a primeira delas era chamada dentro do `try` de `extrairDados()`, todo clique em "ANÁLISE PRO" caía no `catch` e exibia "Falha ao extrair dados" — a extensão estava 100% inoperante desde a v7.8. Todas as quatro foram implementadas. **Outras correções:** `chrome.storage.onChanged` escutava `custom_taxes` enquanto o background gravava `ml_custom_taxes` (sincronização de taxas nunca funcionou); `XMLHttpRequest` **síncrono** na thread principal removido; XSS no popup (títulos do garimpo e sugestões de busca iam para `innerHTML` sem escape, com `escapeHTML` importado mas não usado); `@import` do Google Fonts no `style.css` e no `popup.html` (bloqueado pela CSP, só gerava erro); MutationObservers da busca sem debounce, sem desconexão na troca de rota e re-disparando com os próprios badges; navegação SPA detectada só por polling. **Novo — extração analítica completa (paridade com Avantpro/AnálisePlace):** handler composto `analyzeMlItem` que busca em paralelo item, descrição, vendedor, nº de anúncios do vendedor, categoria, **tarifas reais da categoria** (`/sites/MLB/listing_prices`), reviews, **visitas e conversão**, ranking na categoria e concorrência de catálogo/Buy Box. HUD reescrito em 9 seções. Calculadora ganhou comissão real, **ponto de equilíbrio**, markup, lucro projetado 30d e matriz de −15% a +15%. Avaliações com distribuição por estrela e **mineração das dores mais citadas**. SEO com diagnóstico acionável. Grid de busca enriquecido via multiget (20 ids/chamada) com tipo de anúncio, logística, idade, estoque, vendedor e **detecção de monopólio**. **Segurança:** `state` anti-CSRF no OAuth, refresh de token deduplicado, credenciais próprias por usuário (secret nunca sai do SW), CSP com `connect-src`/`style-src` restritos, permissões `activeTab` e `scripting` removidas. **Infra:** service worker como módulo ES, cache com TTL, ícones criados, `popup.css` extraído, `tools/validate.mjs` (87 checagens) e `tools/test.mjs` (61 testes sobre o código publicado), `package.json` com `npm run check`. |
 | **v7.12** (07/06/2026) | AI (Antigravity) | **HOTFIX (Segurança):** Auditoria OWASP 2025. **`content.js` e `popup.js`:** Adicionada função de sanitização `escapeHTML` para todas as strings dinâmicas (títulos, nicknames, ean, reviews, keywords) provenientes de APIs ou DOM externo antes da injeção via `innerHTML`. Isso mitiga riscos severos de XSS (A05) por vendedores ou dados maliciosos. **`manifest.json`:** Endurecimento da política de segurança (CSP) com `script-src 'self'` para as páginas da extensão. Documentado o risco residual do fluxo PKCE via client-side sem backend. Bump v7.12. |
 | **v7.11** (06/06/2026) | AI (Antigravity) | **FEATURE (Etapa 11):** Snapshot de Vendas e Histórico Real. **`background.js`:** adicionados endpoints `saveSnapshot` e `getSnapshot` usando `chrome.storage.local` para salvar um log diário do número de vendas do produto (limitado a 60 dias). **`content.js`:** criada a função `processarSnapshotsVendas()` que roda no carregamento de qualquer produto no ML e Shopee. Ela compara o total de vendas atual com o snapshot mais antigo de até 30 dias atrás para calcular a média de "Vendas Reais/30d". O HUD foi atualizado para exibir `📈 Vendas/30d (Real)` no lugar de "Est. Vendas/30d" quando os snapshots estão disponíveis. Bump v7.11. |
 | **v7.10** (06/06/2026) | AI (Antigravity) | **FEATURE (Etapa 10):** Títulos, Tags e Diagnóstico de Ficha (SEO/Compliance). **`content.js`:** criada a seção colapsável `🎯 SEO & Ficha` no HUD (ML e Shopee) logo após a seção de Avaliações. A função `carregarSEO()` conta os caracteres do título (alertando verde para `≤ 60` e âmbar para `> 60`), filtra stop-words do título e constrói um array com a frequência das palavras simulando as tags mais relevantes que indexam o anúncio no algoritmo do marketplace, exibidas de forma visual. Bump v7.10. |
@@ -128,3 +155,4 @@ Esta seção deve ser atualizada em formato de tabela/changelog de maneira crono
 | **v7.1** (05/06/2026) | AI (Antigravity) | **FEATURE (Etapa 1):** Injeção de métricas nos resultados de busca do Mercado Livre. **Novo sistema em `content.js`:** roteamento automático de contexto (`isSearchPage()` / `isProductPage()`), extração de vendas e preço de cards de busca (`extractSalesFromCard`, `extractPriceFromCard`), detecção de Frete Grátis e Full, construção e injeção de badges (`.ml-search-badge`) com MutationObserver para scroll infinito e paginação SPA. **`style.css`:** ~100 linhas de estilos novos para badges compactos, separadores, tags coloridas (Full/Premium/Frete), animação `searchBadgeFadeIn`, hover glow. **Manifest:** bump v7.1, descrição atualizada. |
 | **v7.0** (05/06/2026) | AI (Antigravity) | **MAJOR:** Reescrita completa de todos os arquivos. **Bugs corrigidos:** variável `key` → `storageKey` em `loadAndApplyPosition`, null checks no popup.js. **Segurança:** documentação do risco de CLIENT_SECRET exposto, implementação de `refreshAccessToken()` com `chrome.alarms`. **Design:** tema "Dark Commerce HUD" (fundo escuro, verde neon/vermelho/âmbar, JetBrains Mono, animações GPU-accelerated, `prefers-reduced-motion`). **Funcionalidades novas:** score de lucratividade visual, seções colapsáveis, cálculo de ROI, botão de copiar dados, detecção de frete grátis, botão fechar painel, popup com status de autenticação, logout, configuração de taxas customizáveis, renovação automática de token. **Manifest:** bump v7.0, permissão `alarms` adicionada. |
 | **v6.1** (05/06/2026) | AI (Antigravity) | Criação da documentação inicial da base de código (`CODEBASE.md`) detalhando o funcionamento geral, fluxo de login com PKCE, lógica da calculadora de tarifas do Mercado Livre e estabelecimento da regra de atualização obrigatória. |
+

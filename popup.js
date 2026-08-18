@@ -1,21 +1,13 @@
+/**
+ * popup.js — Analisador Pro v8.0
+ *
+ * Toda a UI é montada com `el()`/textContent. Nada de innerHTML: títulos de
+ * anúncio e sugestões de busca vêm de terceiros e não podem virar markup.
+ */
 
 // ==================================================================
-//  SECURITY: SANITIZATION
+//  DEFAULTS
 // ==================================================================
-const escapeHTML = (str) => {
-  if (str == null) return '';
-  return String(str).replace(/[&<>'"]/g, 
-    tag => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      "'": '&#39;',
-      '"': '&quot;'
-    }[tag] || tag)
-  );
-};
-
-// popup.js — Analisador de Produtos v7.3 (ML + Shopee + Garimpo)
 
 const DEFAULT_TAXES = {
   limiteCustoFixo: 79.0,
@@ -23,637 +15,599 @@ const DEFAULT_TAXES = {
   taxasPorAnuncio: { Classico: 0.13, Premium: 0.18 },
 };
 
-const DEFAULT_SHOPEE_TAXES = {
-  comissao: 0.14,
-  taxaFixa: 3.0,
-};
+const DEFAULT_SHOPEE_TAXES = { comissao: 0.14, taxaFixa: 3.0 };
+const DEFAULT_GLOBAL_COSTS = { imposto: 0, custoFixo: 0 };
 
 // ==================================================================
-//  ELEMENTOS DOM
+//  HELPERS
 // ==================================================================
 
-const authDot = document.getElementById('authDot');
-const authLabel = document.getElementById('authLabel');
-const authDetail = document.getElementById('authDetail');
-const loginButton = document.getElementById('loginButton');
-const logoutButton = document.getElementById('logoutButton');
-const popupMessage = document.getElementById('popupMessage');
-const saveTaxesBtn = document.getElementById('saveTaxesBtn');
-const resetTaxesBtn = document.getElementById('resetTaxesBtn');
-const saveShopeeBtn = document.getElementById('saveShopeeBtn');
-const resetShopeeBtn = document.getElementById('resetShopeeBtn');
-const exportCsvBtn = document.getElementById('exportCsvBtn');
-const clearGarimpoBtn = document.getElementById('clearGarimpoBtn');
+const $ = (id) => document.getElementById(id);
 
-// ==================================================================
-//  STATUS DE AUTENTICAÇÃO
-// ==================================================================
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  if (props.className) node.className = props.className;
+  if (props.text !== undefined && props.text !== null) node.textContent = String(props.text);
+  if (props.title) node.title = props.title;
+  if (props.dataset) for (const [k, v] of Object.entries(props.dataset)) node.dataset[k] = v;
+  if (props.attrs) for (const [k, v] of Object.entries(props.attrs)) node.setAttribute(k, v);
+  if (props.on) for (const [evt, fn] of Object.entries(props.on)) node.addEventListener(evt, fn);
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+  }
+  return node;
+}
 
-function checkAuthStatus() {
-  chrome.runtime.sendMessage({ type: 'getAuthStatus' }, (response) => {
-    if (chrome.runtime.lastError || !response) {
-      setAuthUI('offline', 'Desconectado', 'Erro na comunicação');
-      loginButton.style.display = 'block';
-      logoutButton.style.display = 'none';
-      return;
-    }
+function replaceChildren(container, ...nodes) {
+  while (container.firstChild) container.removeChild(container.firstChild);
+  for (const node of nodes.flat()) if (node) container.appendChild(node);
+}
 
-    if (response.status === 'logged_in') {
-      const minutes = Math.floor(response.expiresIn / 60);
-      const hours = Math.floor(minutes / 60);
-      const timeStr = hours > 0 ? `${hours}h ${minutes % 60}m restantes` : `${minutes}m restantes`;
-      setAuthUI('online', 'Conectado', timeStr);
-      loginButton.style.display = 'none';
-      logoutButton.style.display = 'block';
-    } else if (response.status === 'expired') {
-      setAuthUI('expired', 'Token Expirado', response.canRefresh ? 'Renovação disponível' : 'Faça login novamente');
-      loginButton.style.display = 'block';
-      logoutButton.style.display = 'none';
-    } else {
-      setAuthUI('offline', 'Desconectado', 'Clique para autenticar');
-      loginButton.style.display = 'block';
-      logoutButton.style.display = 'none';
-    }
+function send(message) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { success: false, error: 'Sem resposta do service worker.' });
+    });
   });
 }
 
-function setAuthUI(status, label, detail) {
-  authDot.className = `auth-dot ${status}`;
-  authLabel.textContent = label;
-  authDetail.textContent = detail;
-}
+const fmtMoeda = (valor) =>
+  typeof valor === 'number' && Number.isFinite(valor)
+    ? valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    : '—';
 
-function showMessage(text, type) {
-  popupMessage.textContent = text;
-  popupMessage.className = `popup-message ${type}`;
-  setTimeout(() => {
-    popupMessage.className = 'popup-message';
+const fmtNumero = (valor) =>
+  typeof valor === 'number' && Number.isFinite(valor) ? valor.toLocaleString('pt-BR') : '—';
+
+let messageTimer = null;
+
+function showMessage(texto, tipo = 'success') {
+  const node = $('popupMessage');
+  node.textContent = texto;
+  node.className = `popup-message ${tipo}`;
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => {
+    node.className = 'popup-message';
   }, 4000);
 }
 
-// ==================================================================
-//  LOGIN / LOGOUT
-// ==================================================================
-
-loginButton.addEventListener('click', () => {
-  loginButton.disabled = true;
-  loginButton.innerHTML = '<span class="loading-spinner"></span> CONECTANDO...';
-
-  chrome.runtime.sendMessage({ type: 'login' }, (response) => {
-    loginButton.disabled = false;
-    loginButton.innerHTML = '▶ LOGIN COM MERCADO LIVRE';
-
-    if (chrome.runtime.lastError || !response) {
-      showMessage('Erro na comunicação com a extensão.', 'error');
-      return;
-    }
-
-    if (response.success) {
-      showMessage('Login realizado com sucesso!', 'success');
-      checkAuthStatus();
-    } else {
-      showMessage(response.error || 'Falha no login.', 'error');
-    }
-  });
-});
-
-logoutButton.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'logout' }, (response) => {
-    if (response?.success) {
-      showMessage('Desconectado com sucesso.', 'success');
-      checkAuthStatus();
-    } else {
-      showMessage('Erro ao desconectar.', 'error');
-    }
-  });
-});
+/** Feedback visual efêmero em um botão de ação. */
+async function copiarComFeedback(texto, botao, rotuloOk = '✅') {
+  try {
+    await navigator.clipboard.writeText(texto);
+  } catch {
+    showMessage('Não foi possível acessar a área de transferência.', 'error');
+    return;
+  }
+  if (!botao) return;
+  const original = botao.textContent;
+  botao.textContent = rotuloOk;
+  botao.classList.add('ok');
+  setTimeout(() => {
+    botao.textContent = original;
+    botao.classList.remove('ok');
+  }, 1400);
+}
 
 // ==================================================================
-//  GARIMPO — LISTA DE PRODUTOS SALVOS
+//  ABAS
 // ==================================================================
 
-function loadGarimpoList() {
-  chrome.runtime.sendMessage({ type: 'getGarimpoList' }, (response) => {
-    if (chrome.runtime.lastError || !response) return;
-
-    const items = response.items || [];
-    const container = document.getElementById('garimpoContainer');
-    const emptyState = document.getElementById('garimpoEmpty');
-    const actions = document.getElementById('garimpoActions');
-    const countEl = document.getElementById('garimpoCount');
-
-    if (items.length === 0) {
-      emptyState.style.display = 'block';
-      actions.style.display = 'none';
-      countEl.textContent = '';
-      return;
-    }
-
-    emptyState.style.display = 'none';
-    actions.style.display = 'flex';
-    countEl.textContent = `${items.length} item${items.length > 1 ? 's' : ''}`;
-
-    // Build items HTML
-    const html = items.map((item) => {
-      const plataforma = (item.plataforma || 'meli').toLowerCase();
-      const platformLabel = plataforma === 'shopee' ? 'Shopee' : 'ML';
-      const platformClass = plataforma === 'shopee' ? 'shopee' : 'meli';
-      const preco = typeof item.preco === 'number'
-        ? item.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-        : 'N/A';
-      const vendas = typeof item.vendas === 'number'
-        ? item.vendas.toLocaleString('pt-BR')
-        : '0';
-      const date = item.timestamp
-        ? new Date(item.timestamp).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-        : '';
-
-      return `
-        <div class="garimpo-item" data-id="${item.id}">
-          <span class="garimpo-platform ${platformClass}">${platformLabel}</span>
-          <div class="garimpo-item-body">
-            <div class="garimpo-item-title" title="${item.titulo || ''}" data-url="${item.url || ''}">${item.titulo || 'Sem título'}</div>
-            <div class="garimpo-item-meta">
-              <span>💲 ${preco}</span>
-              <span>📦 ${vendas} vendas</span>
-              <span>📅 ${date}</span>
-            </div>
-          </div>
-          <button class="garimpo-delete" title="Remover" data-id="${item.id}">✕</button>
-        </div>
-      `;
-    }).join('');
-
-    // Keep empty state element but add items before it
-    container.innerHTML = html + '<div class="garimpo-empty" id="garimpoEmpty" style="display:none;"><span class="garimpo-empty-icon">📭</span>Nenhum produto salvo.<br>Use o botão ⭐ Garimpo no HUD.</div>';
-
-    // Attach click listeners for titles (open URL) and delete buttons
-    container.querySelectorAll('.garimpo-item-title').forEach((el) => {
-      el.addEventListener('click', () => {
-        const url = el.dataset.url;
-        if (url) chrome.tabs.create({ url });
-      });
-    });
-
-    container.querySelectorAll('.garimpo-delete').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.id;
-        chrome.runtime.sendMessage({ type: 'removeGarimpoItem', itemId: id }, (res) => {
-          if (res?.success) loadGarimpoList();
-        });
-      });
-    });
+for (const botao of document.querySelectorAll('.tab-btn')) {
+  botao.addEventListener('click', () => {
+    for (const outro of document.querySelectorAll('.tab-btn')) outro.classList.remove('active');
+    for (const painel of document.querySelectorAll('.tab-content')) painel.classList.remove('active');
+    botao.classList.add('active');
+    $(`tab-content-${botao.dataset.tab}`)?.classList.add('active');
   });
 }
 
-// Export CSV
-exportCsvBtn.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'getGarimpoList' }, (response) => {
-    if (chrome.runtime.lastError || !response) return;
-
-    const items = response.items || [];
-    if (items.length === 0) {
-      showMessage('Nenhum item para exportar.', 'error');
-      return;
-    }
-
-    const headers = [
-      'Plataforma', 'Título', 'URL', 'Preço', 'Vendas', 'Volume Bruto',
-      'Tipo Anúncio', 'EAN', 'Frete Grátis', 'Custo Produto', 'Custo Frete',
-      'Vendedor', 'Data'
-    ];
-
-    const rows = items.map((item) => [
-      item.plataforma || 'meli',
-      `"${(item.titulo || '').replace(/"/g, '""')}"`,
-      item.url || '',
-      item.preco || 0,
-      item.vendas || 0,
-      item.volumeBruto || 0,
-      item.tipoAnuncio || 'N/A',
-      item.ean || 'N/A',
-      item.freteGratis ? 'Sim' : 'Não',
-      item.custoProduto || 0,
-      item.custoFrete || 0,
-      item.sellerNick || '',
-      item.timestamp || ''
-    ]);
-
-    const csvContent = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
-    const bom = '\uFEFF'; // UTF-8 BOM for Excel compatibility
-    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `garimpo_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    showMessage(`${items.length} itens exportados com sucesso!`, 'success');
-  });
-});
-
-// Clear all
-clearGarimpoBtn.addEventListener('click', () => {
-  if (!confirm('Tem certeza que deseja limpar todos os itens do Garimpo?')) return;
-
-  chrome.runtime.sendMessage({ type: 'clearGarimpo' }, (response) => {
-    if (response?.success) {
-      showMessage('Garimpo limpo com sucesso!', 'success');
-      loadGarimpoList();
-    } else {
-      showMessage('Erro ao limpar o Garimpo.', 'error');
-    }
-  });
-});
-
 // ==================================================================
-//  CONFIGURAÇÃO DE TAXAS — MERCADO LIVRE
+//  AUTENTICAÇÃO
 // ==================================================================
 
-function loadTaxConfig() {
-  chrome.runtime.sendMessage({ type: 'getCustomTaxes' }, (response) => {
-    if (chrome.runtime.lastError || !response) return;
+async function checkAuthStatus() {
+  const resposta = await send({ type: 'getAuthStatus' });
 
-    const taxes = response.taxes || DEFAULT_TAXES;
-    document.getElementById('taxClassico').value = (taxes.taxasPorAnuncio.Classico * 100).toFixed(1);
-    document.getElementById('taxPremium').value = (taxes.taxasPorAnuncio.Premium * 100).toFixed(1);
-    document.getElementById('taxCustoFixo').value = taxes.custoFixo.toFixed(2);
-    document.getElementById('taxLimiteCusto').value = taxes.limiteCustoFixo.toFixed(2);
-  });
+  const aplicar = (estado, rotulo, detalhe, mostrarLogin) => {
+    $('authDot').className = `auth-dot ${estado}`;
+    $('authLabel').textContent = rotulo;
+    $('authDetail').textContent = detalhe;
+    $('loginButton').hidden = !mostrarLogin;
+    $('logoutButton').hidden = mostrarLogin;
+  };
+
+  if (!resposta.success && !resposta.status) {
+    aplicar('offline', 'Desconectado', 'Falha de comunicação', true);
+    return;
+  }
+
+  if (resposta.status === 'logged_in') {
+    const minutos = Math.floor(resposta.expiresIn / 60);
+    const horas = Math.floor(minutos / 60);
+    const detalhe = horas > 0 ? `${horas}h ${minutos % 60}m restantes` : `${minutos}m restantes`;
+    aplicar('online', 'Conectado', detalhe, false);
+  } else if (resposta.status === 'expired') {
+    aplicar(
+      'expired',
+      'Token expirado',
+      resposta.canRefresh ? 'Renovando automaticamente…' : 'Faça login novamente',
+      !resposta.canRefresh,
+    );
+  } else {
+    aplicar('offline', 'Desconectado', 'Clique para autenticar', true);
+  }
 }
 
-saveTaxesBtn.addEventListener('click', () => {
+$('loginButton').addEventListener('click', async () => {
+  const botao = $('loginButton');
+  botao.disabled = true;
+  replaceChildren(botao, el('span', { className: 'loading-spinner' }), ' CONECTANDO…');
+
+  const resposta = await send({ type: 'login' });
+
+  botao.disabled = false;
+  botao.textContent = '▶ Conectar com o Mercado Livre';
+
+  if (resposta.success) {
+    showMessage('Login realizado com sucesso!');
+  } else {
+    showMessage(resposta.error || 'Falha no login.', 'error');
+  }
+  checkAuthStatus();
+});
+
+$('logoutButton').addEventListener('click', async () => {
+  const resposta = await send({ type: 'logout' });
+  showMessage(resposta.success ? 'Desconectado.' : 'Erro ao desconectar.', resposta.success ? 'success' : 'error');
+  checkAuthStatus();
+});
+
+// ==================================================================
+//  GARIMPO
+// ==================================================================
+
+function montarItemGarimpo(item) {
+  const plataforma = (item.plataforma || 'meli').toLowerCase();
+  const data = item.timestamp
+    ? new Date(item.timestamp).toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '';
+
+  const meta = [
+    el('span', { text: `💲 ${fmtMoeda(item.preco)}` }),
+    item.vendas30d != null
+      ? el('span', { text: `📈 ${fmtNumero(item.vendas30d)}/30d` })
+      : el('span', { text: `📦 ${fmtNumero(item.vendas)} vendas` }),
+    item.margem != null
+      ? el('span', {
+          className: item.margem >= 0 ? 'lucro-pos' : 'lucro-neg',
+          text: `${item.margem >= 0 ? '▲' : '▼'} ${item.margem.toFixed(1)}%`,
+          title: `Lucro por venda: ${fmtMoeda(item.lucro)}`,
+        })
+      : null,
+    item.sellerNick ? el('span', { text: `🏪 ${item.sellerNick}` }) : null,
+    data ? el('span', { text: `📅 ${data}` }) : null,
+  ].filter(Boolean);
+
+  const titulo = el('div', {
+    className: 'garimpo-item-title',
+    text: item.titulo || 'Sem título',
+    title: item.titulo || '',
+    on: {
+      click: () => {
+        if (item.url) chrome.tabs.create({ url: item.url });
+      },
+    },
+  });
+
+  return el('div', { className: 'garimpo-item' }, [
+    el('span', {
+      className: `garimpo-platform ${plataforma === 'shopee' ? 'shopee' : 'meli'}`,
+      text: plataforma === 'shopee' ? 'SHP' : 'ML',
+    }),
+    el('div', { className: 'garimpo-item-body' }, [titulo, el('div', { className: 'garimpo-item-meta' }, meta)]),
+    el('button', {
+      className: 'garimpo-delete',
+      text: '✕',
+      title: 'Remover',
+      on: {
+        click: async () => {
+          const resposta = await send({ type: 'removeGarimpoItem', itemId: item.id });
+          if (resposta.success) loadGarimpoList();
+        },
+      },
+    }),
+  ]);
+}
+
+async function loadGarimpoList() {
+  const resposta = await send({ type: 'getGarimpoList' });
+  const itens = resposta.success ? resposta.items || [] : [];
+  const container = $('garimpoContainer');
+
+  $('garimpoCount').textContent = itens.length ? `${itens.length} item${itens.length > 1 ? 's' : ''}` : '';
+  $('garimpoActions').hidden = itens.length === 0;
+
+  if (!itens.length) {
+    replaceChildren(
+      container,
+      el('div', { className: 'garimpo-empty' }, [
+        el('span', { className: 'garimpo-empty-icon', text: '📭' }),
+        'Nenhum produto salvo.',
+        el('br'),
+        'Use o botão ⭐ Garimpo no HUD do anúncio.',
+      ]),
+    );
+    return;
+  }
+
+  replaceChildren(container, itens.map(montarItemGarimpo));
+}
+
+/** Uma célula CSV com escape de aspas e separador. */
+function csvCell(valor) {
+  if (valor === null || valor === undefined) return '';
+  const texto = String(valor);
+  return /[";\n]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+}
+
+$('exportCsvBtn').addEventListener('click', async () => {
+  const resposta = await send({ type: 'getGarimpoList' });
+  const itens = resposta.success ? resposta.items || [] : [];
+
+  if (!itens.length) {
+    showMessage('Nenhum item para exportar.', 'error');
+    return;
+  }
+
+  const colunas = [
+    ['Plataforma', (i) => i.plataforma],
+    ['Título', (i) => i.titulo],
+    ['URL', (i) => i.url],
+    ['ID', (i) => i.itemId],
+    ['Preço', (i) => i.preco],
+    ['Preço original', (i) => i.precoOriginal],
+    ['Vendas totais', (i) => i.vendas],
+    ['Vendas 30d', (i) => i.vendas30d],
+    ['Vendas/dia', (i) => (i.vendasPorDia != null ? i.vendasPorDia.toFixed(2) : '')],
+    ['Faturamento 30d', (i) => i.faturamento30d],
+    ['Estoque', (i) => i.estoque],
+    ['Visitas 30d', (i) => i.visitas30d],
+    ['Conversão %', (i) => (i.conversao != null ? i.conversao.toFixed(2) : '')],
+    ['Tipo de anúncio', (i) => i.tipoAnuncio],
+    ['Logística', (i) => i.logistica],
+    ['Frete grátis', (i) => (i.freteGratis ? 'Sim' : 'Não')],
+    ['EAN', (i) => i.ean],
+    ['Marca', (i) => i.marca],
+    ['Categoria', (i) => i.categoria],
+    ['Idade (dias)', (i) => i.idadeDias],
+    ['Criado em', (i) => i.dataCriacao],
+    ['Qualidade da ficha', (i) => (i.saudeFicha != null ? Math.round(i.saudeFicha * 100) : '')],
+    ['Nota', (i) => i.nota],
+    ['Avaliações', (i) => i.totalAvaliacoes],
+    ['Vendedor', (i) => i.sellerNick],
+    ['Reputação', (i) => i.sellerReputacao],
+    ['Anúncios do vendedor', (i) => i.sellerAnuncios],
+    ['Custo produto', (i) => i.custoProduto],
+    ['Custo frete', (i) => i.custoFrete],
+    ['Lucro', (i) => (i.lucro != null ? i.lucro.toFixed(2) : '')],
+    ['Margem %', (i) => (i.margem != null ? i.margem.toFixed(2) : '')],
+    ['Salvo em', (i) => i.timestamp],
+  ];
+
+  const linhas = [
+    colunas.map(([titulo]) => csvCell(titulo)).join(';'),
+    ...itens.map((item) => colunas.map(([, get]) => csvCell(get(item))).join(';')),
+  ];
+
+  // BOM para o Excel reconhecer UTF-8; ";" como separador no padrão pt-BR.
+  const blob = new Blob([`﻿${linhas.join('\r\n')}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = el('a', { attrs: { href: url, download: `garimpo_${new Date().toISOString().slice(0, 10)}.csv` } });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+  showMessage(`${itens.length} itens exportados.`);
+});
+
+$('clearGarimpoBtn').addEventListener('click', async () => {
+  if (!confirm('Remover todos os itens salvos no Garimpo?')) return;
+  const resposta = await send({ type: 'clearGarimpo' });
+  if (resposta.success) {
+    showMessage('Garimpo limpo.');
+    loadGarimpoList();
+  } else {
+    showMessage('Erro ao limpar o Garimpo.', 'error');
+  }
+});
+
+// ==================================================================
+//  CONFIGURAÇÕES
+// ==================================================================
+
+function numeroDoCampo(id, padrao) {
+  const valor = parseFloat($(id).value);
+  return Number.isFinite(valor) ? valor : padrao;
+}
+
+async function loadTaxConfig() {
+  const resposta = await send({ type: 'getCustomTaxes' });
+  const taxas = resposta.success && resposta.taxes?.taxasPorAnuncio ? resposta.taxes : DEFAULT_TAXES;
+  $('taxClassico').value = ((taxas.taxasPorAnuncio.Classico ?? 0.13) * 100).toFixed(1);
+  $('taxPremium').value = ((taxas.taxasPorAnuncio.Premium ?? 0.18) * 100).toFixed(1);
+  $('taxCustoFixo').value = (taxas.custoFixo ?? 6).toFixed(2);
+  $('taxLimiteCusto').value = (taxas.limiteCustoFixo ?? 79).toFixed(2);
+}
+
+$('saveTaxesBtn').addEventListener('click', async () => {
   const taxes = {
-    limiteCustoFixo: parseFloat(document.getElementById('taxLimiteCusto').value) || 79.0,
-    custoFixo: parseFloat(document.getElementById('taxCustoFixo').value) || 6.0,
+    limiteCustoFixo: numeroDoCampo('taxLimiteCusto', 79),
+    custoFixo: numeroDoCampo('taxCustoFixo', 6),
     taxasPorAnuncio: {
-      Classico: (parseFloat(document.getElementById('taxClassico').value) || 13) / 100,
-      Premium: (parseFloat(document.getElementById('taxPremium').value) || 18) / 100,
+      Classico: numeroDoCampo('taxClassico', 13) / 100,
+      Premium: numeroDoCampo('taxPremium', 18) / 100,
     },
   };
-
-  chrome.runtime.sendMessage({ type: 'saveCustomTaxes', taxes }, (response) => {
-    if (response?.success) {
-      showMessage('Taxas ML salvas com sucesso!', 'success');
-    } else {
-      showMessage('Erro ao salvar taxas.', 'error');
-    }
-  });
+  const resposta = await send({ type: 'saveCustomTaxes', taxes });
+  showMessage(resposta.success ? 'Taxas do Mercado Livre salvas.' : 'Erro ao salvar.', resposta.success ? 'success' : 'error');
 });
 
-resetTaxesBtn.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'saveCustomTaxes', taxes: null }, (response) => {
-    if (response?.success) {
-      document.getElementById('taxClassico').value = '13.0';
-      document.getElementById('taxPremium').value = '18.0';
-      document.getElementById('taxCustoFixo').value = '6.00';
-      document.getElementById('taxLimiteCusto').value = '79.00';
-      showMessage('Taxas ML restauradas ao padrão.', 'success');
-    }
-  });
+$('resetTaxesBtn').addEventListener('click', async () => {
+  const resposta = await send({ type: 'saveCustomTaxes', taxes: null });
+  if (resposta.success) {
+    await loadTaxConfig();
+    showMessage('Taxas restauradas ao padrão.');
+  }
 });
 
-// ==================================================================
-//  CONFIGURAÇÃO DE TAXAS — SHOPEE
-// ==================================================================
-
-function loadShopeeTaxConfig() {
-  chrome.runtime.sendMessage({ type: 'getShopeeCustomTaxes' }, (response) => {
-    if (chrome.runtime.lastError || !response) return;
-
-    const taxes = response.taxes || DEFAULT_SHOPEE_TAXES;
-    document.getElementById('shopeeComissao').value = (taxes.comissao * 100).toFixed(1);
-    document.getElementById('shopeeTaxaFixa').value = taxes.taxaFixa.toFixed(2);
-  });
+async function loadShopeeTaxConfig() {
+  const resposta = await send({ type: 'getShopeeCustomTaxes' });
+  const taxas = resposta.success && resposta.taxes ? resposta.taxes : DEFAULT_SHOPEE_TAXES;
+  $('shopeeComissao').value = ((taxas.comissao ?? 0.14) * 100).toFixed(1);
+  $('shopeeTaxaFixa').value = (taxas.taxaFixa ?? 3).toFixed(2);
 }
 
-saveShopeeBtn.addEventListener('click', () => {
+$('saveShopeeBtn').addEventListener('click', async () => {
   const taxes = {
-    comissao: (parseFloat(document.getElementById('shopeeComissao').value) || 14) / 100,
-    taxaFixa: parseFloat(document.getElementById('shopeeTaxaFixa').value) || 3.0,
+    comissao: numeroDoCampo('shopeeComissao', 14) / 100,
+    taxaFixa: numeroDoCampo('shopeeTaxaFixa', 3),
   };
-
-  chrome.runtime.sendMessage({ type: 'saveShopeeCustomTaxes', taxes }, (response) => {
-    if (response?.success) {
-      showMessage('Taxas Shopee salvas com sucesso!', 'success');
-    } else {
-      showMessage('Erro ao salvar taxas Shopee.', 'error');
-    }
-  });
+  const resposta = await send({ type: 'saveShopeeCustomTaxes', taxes });
+  showMessage(resposta.success ? 'Taxas da Shopee salvas.' : 'Erro ao salvar.', resposta.success ? 'success' : 'error');
 });
 
-resetShopeeBtn.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'saveShopeeCustomTaxes', taxes: null }, (response) => {
-    if (response?.success) {
-      document.getElementById('shopeeComissao').value = '14.0';
-      document.getElementById('shopeeTaxaFixa').value = '3.00';
-      showMessage('Taxas Shopee restauradas ao padrão.', 'success');
-    }
-  });
+$('resetShopeeBtn').addEventListener('click', async () => {
+  const resposta = await send({ type: 'saveShopeeCustomTaxes', taxes: null });
+  if (resposta.success) {
+    await loadShopeeTaxConfig();
+    showMessage('Taxas da Shopee restauradas.');
+  }
 });
 
-// ==================================================================
-//  SISTEMA DE ABAS (TABS)
-// ==================================================================
+async function loadGlobalCosts() {
+  const resposta = await send({ type: 'getGlobalCosts' });
+  const custos = resposta.success && resposta.costs ? resposta.costs : DEFAULT_GLOBAL_COSTS;
+  $('impostoGlobal').value = Number(custos.imposto ?? 0).toFixed(1);
+  $('custoFixoGlobal').value = Number(custos.custoFixo ?? 0).toFixed(2);
+}
 
-document.querySelectorAll('.tab-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const tabId = btn.dataset.tab;
-    
-    // Desativar todas as abas
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    
-    // Ativar a aba correspondente
-    btn.classList.add('active');
-    const contentEl = document.getElementById(`tab-content-${tabId}`);
-    if (contentEl) contentEl.classList.add('active');
-  });
+$('saveGlobalCostsBtn').addEventListener('click', async () => {
+  const costs = {
+    imposto: numeroDoCampo('impostoGlobal', 0),
+    custoFixo: numeroDoCampo('custoFixoGlobal', 0),
+  };
+  const resposta = await send({ type: 'saveGlobalCosts', costs });
+  showMessage(resposta.success ? 'Impostos e custos salvos.' : 'Erro ao salvar.', resposta.success ? 'success' : 'error');
+});
+
+$('resetGlobalCostsBtn').addEventListener('click', async () => {
+  const resposta = await send({ type: 'saveGlobalCosts', costs: null });
+  if (resposta.success) {
+    await loadGlobalCosts();
+    showMessage('Impostos zerados.');
+  }
+});
+
+// --- Credenciais OAuth -------------------------------------------
+
+async function loadOAuthConfig() {
+  const [config, redirect] = await Promise.all([
+    send({ type: 'getOAuthConfig' }),
+    send({ type: 'getRedirectUri' }),
+  ]);
+
+  if (config.success && config.isCustom) $('oauthClientId').value = config.clientId || '';
+  if (redirect.success) $('redirectUri').textContent = redirect.redirectUri;
+}
+
+$('saveOAuthBtn').addEventListener('click', async () => {
+  const clientId = $('oauthClientId').value.trim();
+  const clientSecret = $('oauthClientSecret').value.trim();
+
+  if (!clientId || !clientSecret) {
+    showMessage('Informe Client ID e Client Secret.', 'error');
+    return;
+  }
+
+  const resposta = await send({ type: 'saveOAuthConfig', config: { clientId, clientSecret } });
+  if (resposta.success) {
+    $('oauthClientSecret').value = '';
+    showMessage('Credenciais salvas. Faça login novamente.');
+    checkAuthStatus();
+  } else {
+    showMessage(resposta.error || 'Erro ao salvar credenciais.', 'error');
+  }
+});
+
+$('resetOAuthBtn').addEventListener('click', async () => {
+  const resposta = await send({ type: 'saveOAuthConfig', config: null });
+  if (resposta.success) {
+    $('oauthClientId').value = '';
+    $('oauthClientSecret').value = '';
+    showMessage('Credenciais padrão restauradas. Faça login novamente.');
+    checkAuthStatus();
+  }
 });
 
 // ==================================================================
 //  GERADOR DE EAN-13
 // ==================================================================
 
-const eanQtySelect = document.getElementById('eanQtySelect');
-const generateEanBtn = document.getElementById('generateEanBtn');
-const eanResultsList = document.getElementById('eanResultsList');
-const copyAllEanBtn = document.getElementById('copyAllEanBtn');
+let eansGerados = [];
 
-let currentGeneratedEans = [];
-
-function calculateEanCheckDigit(code) {
-  let sum = 0;
-  for (let i = 0; i < 12; i++) {
-    const digit = parseInt(code[i], 10);
-    sum += (i % 2 === 0) ? digit : digit * 3;
+function digitoVerificadorEan(codigo12) {
+  let soma = 0;
+  for (let i = 0; i < 12; i += 1) {
+    const digito = Number(codigo12[i]);
+    soma += i % 2 === 0 ? digito : digito * 3;
   }
-  return (10 - (sum % 10)) % 10;
+  return (10 - (soma % 10)) % 10;
 }
 
-function generateSingleEAN13() {
-  const prefix = "789"; // Prefixo nacional do Brasil
-  let body = "";
-  for (let i = 0; i < 9; i++) {
-    body += Math.floor(Math.random() * 10);
-  }
-  const checkDigit = calculateEanCheckDigit(prefix + body);
-  return prefix + body + checkDigit;
+function gerarEan13() {
+  // 789 é o prefixo GS1 do Brasil.
+  let corpo = '789';
+  for (let i = 0; i < 9; i += 1) corpo += Math.floor(Math.random() * 10);
+  return corpo + digitoVerificadorEan(corpo);
 }
 
-generateEanBtn.addEventListener('click', () => {
-  const qty = parseInt(eanQtySelect.value, 10) || 1;
-  currentGeneratedEans = [];
-  
-  for (let i = 0; i < qty; i++) {
-    currentGeneratedEans.push(generateSingleEAN13());
+function renderEanList() {
+  const lista = $('eanResultsList');
+  $('copyAllEanBtn').hidden = eansGerados.length === 0;
+
+  if (!eansGerados.length) {
+    replaceChildren(lista, el('div', { className: 'tools-list-empty', text: 'Nenhum EAN gerado ainda.' }));
+    return;
   }
-  
+
+  replaceChildren(
+    lista,
+    eansGerados.map((ean) => {
+      const botao = el('button', { className: 'item-action-btn', text: '📋 Copiar' });
+      botao.addEventListener('click', () => copiarComFeedback(ean, botao, '✅ Copiado'));
+      return el('div', { className: 'list-item' }, [
+        el('span', { className: 'ean-value', text: ean }),
+        el('div', { className: 'item-actions' }, [botao]),
+      ]);
+    }),
+  );
+}
+
+$('generateEanBtn').addEventListener('click', () => {
+  const quantidade = parseInt($('eanQtySelect').value, 10) || 1;
+  eansGerados = Array.from({ length: quantidade }, gerarEan13);
   renderEanList();
 });
 
-function renderEanList() {
-  if (currentGeneratedEans.length === 0) {
-    eanResultsList.innerHTML = '<div class="tools-list-empty">Nenhum EAN gerado ainda.</div>';
-    copyAllEanBtn.style.display = 'none';
+$('copyAllEanBtn').addEventListener('click', () => {
+  if (!eansGerados.length) return;
+  copiarComFeedback(eansGerados.join('\n'), $('copyAllEanBtn'), '✅ Todos copiados');
+});
+
+// ==================================================================
+//  SEO — SUGESTÕES DE BUSCA
+// ==================================================================
+
+let plataformaSeo = 'ml';
+let debounceSeo = null;
+
+for (const botao of document.querySelectorAll('.platform-toggle-btn')) {
+  botao.addEventListener('click', () => {
+    for (const outro of document.querySelectorAll('.platform-toggle-btn')) outro.classList.remove('active');
+    botao.classList.add('active');
+    plataformaSeo = botao.dataset.platform;
+    buscarSugestoes();
+  });
+}
+
+$('seoQueryInput').addEventListener('input', () => {
+  clearTimeout(debounceSeo);
+  debounceSeo = setTimeout(buscarSugestoes, 320);
+});
+
+async function buscarSugestoes() {
+  const lista = $('seoResultsList');
+  const termo = $('seoQueryInput').value.trim();
+
+  if (!termo) {
+    replaceChildren(lista, el('div', { className: 'tools-list-empty', text: 'Digite algo para ver as sugestões reais de busca.' }));
     return;
   }
-  
-  const html = currentGeneratedEans.map((ean) => {
-    return `
-      <div class="ean-list-item">
-        <span class="ean-value">${ean}</span>
-        <button class="item-action-btn copy-ean-btn" data-ean="${ean}">
-          📋 Copiar
-        </button>
-      </div>
-    `;
-  }).join('');
-  
-  eanResultsList.innerHTML = html;
-  copyAllEanBtn.style.display = 'block';
-  
-  // Adicionar listeners para botões de cópia individual
-  eanResultsList.querySelectorAll('.copy-ean-btn').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const ean = btn.dataset.ean;
-      navigator.clipboard.writeText(ean).then(() => {
-        const originalText = btn.textContent;
-        btn.textContent = '✅ Copiado!';
-        btn.classList.add('btn-success');
-        setTimeout(() => {
-          btn.textContent = originalText;
-          btn.classList.remove('btn-success');
-        }, 1500);
+
+  replaceChildren(
+    lista,
+    el('div', { className: 'tools-list-empty' }, [el('span', { className: 'loading-spinner' }), ' Buscando…']),
+  );
+
+  const resposta = await send({
+    type: plataformaSeo === 'ml' ? 'fetchMlSuggestions' : 'fetchShopeeSuggestions',
+    query: termo,
+  });
+
+  if (!resposta.success) {
+    replaceChildren(
+      lista,
+      el('div', { className: 'tools-list-empty', text: `Não foi possível carregar as sugestões: ${resposta.error}` }),
+    );
+    return;
+  }
+
+  const sugestoes = resposta.suggestions || [];
+  if (!sugestoes.length) {
+    replaceChildren(lista, el('div', { className: 'tools-list-empty', text: 'Nenhuma sugestão encontrada.' }));
+    return;
+  }
+
+  replaceChildren(
+    lista,
+    sugestoes.map((palavra) => {
+      const copiar = el('button', { className: 'item-action-btn', text: '📋' , title: 'Copiar termo' });
+      copiar.addEventListener('click', () => copiarComFeedback(palavra, copiar, '✅'));
+
+      const buscar = el('button', {
+        className: 'item-action-btn',
+        text: '🔍',
+        title: 'Abrir busca com este termo',
+        on: {
+          click: () => {
+            const url =
+              plataformaSeo === 'ml'
+                ? `https://lista.mercadolivre.com.br/${encodeURIComponent(palavra)}`
+                : `https://shopee.com.br/search?keyword=${encodeURIComponent(palavra)}`;
+            chrome.tabs.create({ url });
+          },
+        },
       });
-    });
-  });
-}
 
-copyAllEanBtn.addEventListener('click', () => {
-  if (currentGeneratedEans.length === 0) return;
-  const allEansText = currentGeneratedEans.join('\n');
-  navigator.clipboard.writeText(allEansText).then(() => {
-    const originalText = copyAllEanBtn.textContent;
-    copyAllEanBtn.textContent = '✅ TODOS OS EANS COPIADOS!';
-    setTimeout(() => {
-      copyAllEanBtn.textContent = originalText;
-    }, 2000);
-  });
-});
-
-// ==================================================================
-//  SEO PALAVRAS-CHAVE (AUTOCOMPLETE)
-// ==================================================================
-
-const seoQueryInput = document.getElementById('seoQueryInput');
-const seoResultsList = document.getElementById('seoResultsList');
-const platformBtns = document.querySelectorAll('.platform-toggle-btn');
-
-let activePlatform = 'ml'; // 'ml' ou 'shopee'
-let debounceTimer = null;
-
-// Alternar Plataforma
-platformBtns.forEach((btn) => {
-  btn.addEventListener('click', () => {
-    platformBtns.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activePlatform = btn.dataset.platform;
-    
-    // Atualizar busca se houver texto
-    triggerSeoSearch();
-  });
-});
-
-seoQueryInput.addEventListener('input', () => {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(() => {
-    triggerSeoSearch();
-  }, 300); // 300ms debounce
-});
-
-function triggerSeoSearch() {
-  const query = seoQueryInput.value.trim();
-  if (!query) {
-    seoResultsList.innerHTML = '<div class="tools-list-empty">Digite algo para ver sugestões.</div>';
-    return;
-  }
-  
-  seoResultsList.innerHTML = '<div class="tools-list-empty"><span class="loading-spinner"></span> Buscando sugestões...</div>';
-  
-  if (activePlatform === 'ml') {
-    fetchMlSuggestions(query);
-  } else {
-    fetchShopeeSuggestions(query);
-  }
-}
-
-function fetchMlSuggestions(query) {
-  chrome.runtime.sendMessage({ type: 'fetchMlSuggestions', query }, (response) => {
-    if (chrome.runtime.lastError || !response || !response.success) {
-      console.error('Erro sugestões ML:', chrome.runtime.lastError || response?.error);
-      seoResultsList.innerHTML = '<div class="tools-list-empty">Não foi possível carregar sugestões do Mercado Livre.</div>';
-      return;
-    }
-    renderSuggestions(response.suggestions, 'ml');
-  });
-}
-
-function fetchShopeeSuggestions(query) {
-  chrome.runtime.sendMessage({ type: 'fetchShopeeSuggestions', query }, (response) => {
-    if (chrome.runtime.lastError || !response || !response.success) {
-      console.error('Erro sugestões Shopee:', chrome.runtime.lastError || response?.error);
-      seoResultsList.innerHTML = '<div class="tools-list-empty">Não foi possível carregar sugestões da Shopee.</div>';
-      return;
-    }
-    renderSuggestions(response.suggestions, 'shopee');
-  });
-}
-
-function renderSuggestions(suggestions, platform) {
-  if (!suggestions || suggestions.length === 0) {
-    seoResultsList.innerHTML = '<div class="tools-list-empty">Nenhuma sugestão encontrada.</div>';
-    return;
-  }
-  
-  const html = suggestions.map((keyword) => {
-    return `
-      <div class="keyword-list-item" data-keyword="${keyword}" style="cursor: pointer;">
-        <span class="keyword-text" title="${keyword}">${keyword}</span>
-        <div class="keyword-actions">
-          <button class="item-action-btn search-keyword-btn" title="Pesquisar termo">
-            🔍 Busca
-          </button>
-          <button class="item-action-btn copy-keyword-btn" title="Copiar termo">
-            📋 Copiar
-          </button>
-        </div>
-      </div>
-    `;
-  }).join('');
-  
-  seoResultsList.innerHTML = html;
-  
-  // Adicionar listeners para as ações
-  const items = seoResultsList.querySelectorAll('.keyword-list-item');
-  items.forEach((item) => {
-    const keyword = item.dataset.keyword;
-    const copyBtn = item.querySelector('.copy-keyword-btn');
-    const searchBtn = item.querySelector('.search-keyword-btn');
-    
-    // Ação: Copiar
-    const copyFn = (e) => {
-      if (e) e.stopPropagation(); // Evitar propagação
-      navigator.clipboard.writeText(keyword).then(() => {
-        const originalText = copyBtn.textContent;
-        copyBtn.textContent = '✅';
-        copyBtn.classList.add('btn-success');
-        setTimeout(() => {
-          copyBtn.textContent = originalText;
-          copyBtn.classList.remove('btn-success');
-        }, 1500);
-      });
-    };
-    
-    // Ação: Buscar
-    const searchFn = (e) => {
-      if (e) e.stopPropagation(); // Evitar propagação
-      const searchUrl = platform === 'ml'
-        ? `https://lista.mercadolivre.com.br/${encodeURIComponent(keyword)}`
-        : `https://shopee.com.br/search?keyword=${encodeURIComponent(keyword)}`;
-      chrome.tabs.create({ url: searchUrl });
-    };
-    
-    // Clicar no botão de copiar
-    copyBtn.addEventListener('click', copyFn);
-    
-    // Clicar no botão de buscar
-    searchBtn.addEventListener('click', searchFn);
-    
-    // Clicar no item (dispara ambas: copia e busca)
-    item.addEventListener('click', (e) => {
-      copyFn(e);
-      searchFn(e);
-    });
-  });
-}
-
-// ==================================================================
-//  IMPOSTOS E CUSTOS GLOBAIS
-// ==================================================================
-
-function loadGlobalCostsConfig() {
-  chrome.runtime.sendMessage({ type: 'getGlobalCosts' }, (response) => {
-    if (chrome.runtime.lastError || !response) return;
-
-    const costs = response.costs || { imposto: 6.0, custoFixo: 2.0 };
-    document.getElementById('impostoGlobal').value = costs.imposto.toFixed(1);
-    document.getElementById('custoFixoGlobal').value = costs.custoFixo.toFixed(2);
-  });
-}
-
-const saveGlobalCostsBtn = document.getElementById('saveGlobalCostsBtn');
-if (saveGlobalCostsBtn) {
-  saveGlobalCostsBtn.addEventListener('click', () => {
-    const impostoInput = parseFloat(document.getElementById('impostoGlobal').value);
-    const custoFixoInput = parseFloat(document.getElementById('custoFixoGlobal').value);
-    
-    const costs = {
-      imposto: isNaN(impostoInput) ? 6.0 : impostoInput,
-      custoFixo: isNaN(custoFixoInput) ? 2.0 : custoFixoInput,
-    };
-
-    chrome.runtime.sendMessage({ type: 'saveGlobalCosts', costs }, (response) => {
-      if (response?.success) {
-        showMessage('Impostos globais salvos!', 'success');
-      } else {
-        showMessage('Erro ao salvar impostos.', 'error');
-      }
-    });
-  });
-}
-
-const resetGlobalCostsBtn = document.getElementById('resetGlobalCostsBtn');
-if (resetGlobalCostsBtn) {
-  resetGlobalCostsBtn.addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'saveGlobalCosts', costs: null }, (response) => {
-      if (response?.success) {
-        document.getElementById('impostoGlobal').value = '0.0';
-        document.getElementById('custoFixoGlobal').value = '0.00';
-        showMessage('Impostos zerados.', 'success');
-      }
-    });
-  });
+      return el('div', { className: 'list-item' }, [
+        el('span', { className: 'keyword-text', text: palavra, title: palavra }),
+        el('div', { className: 'item-actions' }, [copiar, buscar]),
+      ]);
+    }),
+  );
 }
 
 // ==================================================================
 //  INICIALIZAÇÃO
 // ==================================================================
 
+$('versionLabel').textContent = `v${chrome.runtime.getManifest().version}`;
+
 checkAuthStatus();
+loadGarimpoList();
 loadTaxConfig();
 loadShopeeTaxConfig();
-loadGlobalCostsConfig();
-loadGarimpoList();
+loadGlobalCosts();
+loadOAuthConfig();

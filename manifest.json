@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Meu Analisador de Produtos (com API)",
-  "version": "7.4.1",
-  "description": "Extensão profissional para análise de viabilidade e lucratividade de produtos no Mercado Livre e Shopee. Garimpo local, métricas em buscas, calculadora financeira, OAuth2, ferramentas EAN e SEO.",
+  "name": "Analisador Pro — Mercado Livre & Shopee",
+  "version": "8.1.0",
+  "description": "Análise de viabilidade e lucratividade de produtos no Mercado Livre e Shopee: HUD com calculadora, métricas nas buscas, garimpo, histórico de vendas, EAN e SEO.",
+  "minimum_chrome_version": "116",
   "permissions": [
-    "activeTab",
-    "scripting",
     "storage",
     "identity",
     "alarms",
@@ -15,17 +14,41 @@
   "host_permissions": [
     "*://*.mercadolivre.com.br/*",
     "https://api.mercadolibre.com/*",
-    "*://*.shopee.com.br/*",
-    "*://*.mlstatic.com/*"
+    "https://http2.mlstatic.com/*",
+    "*://*.shopee.com.br/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Analisador de Produtos ML + Shopee"
+    "default_title": "Analisador Pro — ML + Shopee",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "*://*.shopee.com.br/*"
+      ],
+      "js": [
+        "shopee-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
     {
       "matches": [
         "*://*.mercadolivre.com.br/*",
@@ -37,10 +60,11 @@
       "css": [
         "style.css"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self';"
+    "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.mercadolibre.com https://http2.mlstatic.com https://shopee.com.br; base-uri 'none'; form-action 'none'"
   }
 }
